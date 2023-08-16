@@ -1,0 +1,139 @@
+---
+title: "Available data on Makay protected area"
+author: "Florent Bédécarrats"
+format: html
+editor: visual
+---
+
+## Analysis
+
+We use R and a series of packages dedicated to spatial data and analysis.
+
+```{r load_packages}
+library(tidyverse)
+library(geodata)
+library(sf)
+library(terra)
+library(mapme.biodiversity)
+library(tmap)
+library(zoo)
+```
+
+
+
+## A focus on the Androy protected area
+
+We download the Makay protected area boundaries, as well as the borders of the surrounding adminitrative areas.
+
+```{r admin_data}
+
+
+mada <- gadm("MDG", level = 0, path = tempdir()) %>%
+  st_as_sf() 
+provinces_mada <- gadm("MDG", level = 2, path = tempdir()) %>%
+  st_as_sf() 
+regions_mada <- gadm("MDG", level = 3, path = tempdir()) %>%
+  st_as_sf() 
+communes_mada <- gadm("MDG", level  =4, path = tempdir()) %>%
+  st_as_sf() 
+
+
+  
+tmap_mode("view")
+tm_shape(androy) +
+  tm_borders(col = "red") + 
+  tm_basemap("OpenStreetMap")
+```
+
+The municipality parially overlaps with the Ranomafana national park.
+
+## Rainfall
+
+We use the CHIRPS data from NASA to estimate 3 day average rainfall on the Androy Municipality. We compute the data using the package mapme.biodiversity [@mapme.biodiversity].
+
+```{r rainfall}
+# Fetch data
+aoi <- init_portfolio(androy, years = 1980:2021) %>%
+  get_resources("chirps")
+
+aoi2 <- aoi %>%
+  calc_indicators("precipitation_chirps",
+                  engine = "exactextract",
+                  scales_spi = 3,
+                  spi_prev_years = 8)
+rainfall_androy <- aoi2[[16]][[1]]
+
+rainfall_androy %>%
+  mutate(rainfall_3d_mean = rollmean(absolute, k = 3, fill = NA)) %>%
+  ggplot(aes(x = dates, y = rainfall_3d_mean)) +
+  geom_line()
+```
+
+## Cyclones
+
+We use the Tropical cyclone best track data (IBTrACS) to get history of cyclone trajectories and cyclone attributes [@knapp_international_2010], as well as raw code from [@mapme.protectedareas].
+
+```{r cyclones}
+if (!file.exists("ibtracs/IBTrACS.since1980.list.v04r00.lines.shp")) {
+  dir.create("ibtracs")
+  download.file(url = "https://www.ncei.noaa.gov/data/international-best-track-archive-for-climate-stewardship-ibtracs/v04r00/access/shapefile/IBTrACS.since1980.list.v04r00.lines.zip", 
+                destfile = "ibtracs/ibtracs_lines.zip")
+  unzip("ibtracs/ibtracs_lines.zip", exdir = "ibtracs")
+}
+
+# column description is given here: https://www.ncei.noaa.gov/sites/default/files/2021-07/IBTrACS_v04_column_documentation.pdf
+cyclones <- read_sf("ibtracs/IBTrACS.since1980.list.v04r00.lines.shp")
+
+cyclones$wind_combinded <- cyclones %>%
+  select(contains("WIND")) %>%
+  select(-WMO_WIND) %>%
+  st_drop_geometry() %>%
+  rowMeans(., na.rm = T)
+
+cyclones <- cyclones %>%
+  filter(!is.na(wind_combinded))
+# create a dataset for windspeeds above 64 knots (more or less the threashold for winds to cause forest disturbances)
+# hist(cyclones$wind_combinded)
+# table(cyclones$wind_combinded>64)/nrow(cyclones) # will contain only about 19% of all obs. 
+
+cyclones_subset <- cyclones %>% 
+  filter(wind_combinded>64) %>% 
+  filter(DIST2LAND<100)
+
+
+# ---- create a combined 64 knots radius estimation for buffering ----
+
+cyclones_subset$R64_combined <- cyclones_subset %>%
+  select(contains("R64")) %>%
+  st_drop_geometry() %>%
+  rowMeans(., na.rm = T)
+
+# create linear model
+cyclones_model <- cyclones_subset %>% 
+  lm(R64_combined ~ wind_combinded, data = .)
+
+# predict based on real data 
+cyclones_subset$R64_modeled <- predict.lm(cyclones_model, cyclones_subset)
+
+# substitute missings with predicted
+cyclones_subset$R64_combined_model <- ifelse(
+    is.nan(cyclones_subset$R64_combined) == T,
+    cyclones_subset$R64_modeled,
+    cyclones_subset$R64_combined)
+
+# ---- regional subset (if desired) -----
+
+# Create a raser for Androy
+
+mada_rast <- terra::vect(mada) %>%
+  st_as_sf() %>%
+  st_transform(crs = st_crs(cyclones_subset))
+
+cyclones_mada <- st_intersection(cyclones_subset, mada_rast)
+
+tm_shape(cyclones_mada) +
+  tm_lines() + 
+  tm_shape(androy) +
+  tm_borders(col = "red")
+
+```
