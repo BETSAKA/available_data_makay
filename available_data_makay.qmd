@@ -3,13 +3,16 @@ title: "Available data on Makay protected area"
 author: "Florent Bédécarrats"
 format: html
 editor: visual
+editor_options: 
+  chunk_output_type: console
 ---
 
 ## Analysis
 
 We use R and a series of packages dedicated to spatial data and analysis.
 
-```{r load_packages}
+```{r load_packages, warning=FALSE}
+library(aws.s3)
 library(tidyverse)
 library(geodata)
 library(sf)
@@ -19,29 +22,44 @@ library(tmap)
 library(zoo)
 ```
 
-
-
 ## A focus on the Androy protected area
 
-We download the Makay protected area boundaries, as well as the borders of the surrounding adminitrative areas.
+We download the Makay protected area boundaries.
 
 ```{r admin_data}
+makay_ap <- st_read("data/Makay_wgs84.geojson")
+# Draw map
+tmap_mode("view")
+tm_shape(makay_ap) +
+  tm_borders(col = "red") + 
+  tm_basemap("OpenStreetMap")
+```
 
+We also load the perimeters of administrative areas
+
+```{r}
+# On crée une forme fusionnant les parties de Makay
+makay_ap_all <- st_union(makay_ap)
 
 mada <- gadm("MDG", level = 0, path = tempdir()) %>%
   st_as_sf() 
-provinces_mada <- gadm("MDG", level = 2, path = tempdir()) %>%
+provinces_mada <- gadm("MDG", level = 1, path = tempdir()) %>%
   st_as_sf() 
-regions_mada <- gadm("MDG", level = 3, path = tempdir()) %>%
+regions_mada <- gadm("MDG", level = 2, path = tempdir()) %>%
   st_as_sf() 
 communes_mada <- gadm("MDG", level  =4, path = tempdir()) %>%
   st_as_sf() 
 
+toliary <- provinces_mada %>%
+  filter(NAME_1 == "Toliary")
 
+communes_makay <- st_intersection(communes_mada, makay_ap)
   
 tmap_mode("view")
-tm_shape(androy) +
+tm_shape(makay_ap) +
   tm_borders(col = "red") + 
+  tm_shape(toliary) +
+  tm_borders(col = "blue") +
   tm_basemap("OpenStreetMap")
 ```
 
