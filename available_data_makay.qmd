@@ -23,11 +23,12 @@ library(zoo)
 library(units)
 ```
 
-## A focus on the Androy protected area
+## Makay protected area
 
-We download the Makay protected area boundaries.
+We load the Makay protected area boundaries.
 
 ```{r admin_data}
+
 makay_ap <- st_read("data/Makay_wgs84.geojson") %>%
   rename(Statut = SOURCETHM) %>%
   mutate(Statut = recode(Statut, "zone tampon" = "Zone tampon"))
@@ -49,9 +50,12 @@ tm_shape(makay_ap) +
 
 The protected area is composted of five polygons with different status: four polygons are cores, and one polygon is a buffer area.
 
-We will now select all municipalities located within a 20km distance from the outer border of the Makay protected area (core or buffer zone). 
+## Administrative areas
+
+We will now select all municipalities located within a 20km distance from the outer border of the Makay protected area (core or buffer zone).
 
 ```{r make_buffer}
+
 buff_size <- 20
 # Create a 20km buffer around Makay PA
 makay_ext_buffer <- makay_union %>%
@@ -59,14 +63,16 @@ makay_ext_buffer <- makay_union %>%
   st_as_sf()
 # Download Madagascar municipalities
 muni_mada <- gadm("MDG", level  =4, path = tempdir()) %>%
-  st_as_sf() 
+  st_as_sf() %>%
+  rename(Nom_province = NAME_1, Nom_region = NAME_2, Nom_district = NAME_3,
+         Nom_commune = NAME_4)
 # Select municipalities that intersect the buffer
 muni_makay <- muni_mada %>%
   st_filter(makay_union, .predicate = st_intersects)
-muni_makay_names <- pluck(muni_makay, "NAME_4")
+muni_makay_names <- pluck(muni_makay, "Nom_commune")
 muni_around_makay <- muni_mada %>%
   st_filter(makay_ext_buffer, .predicate = st_intersects)
-muni_around_makay_names <- pluck(muni_around_makay, "NAME_4")
+muni_around_makay_names <- pluck(muni_around_makay, "Nom_commune")
 muni_makay <- muni_mada %>%
   st_filter(makay_union, .predicate = st_intersects)
 
@@ -78,30 +84,34 @@ tm_shape(makay_union) +
   tm_borders(col = "red") + 
   tm_shape(muni_around_makay) + 
   tm_borders(col = "blue") +
-  tm_fill(alpha = 0, id = "NAME_4", popup.vars = c("NAME_3", "NAME_2", "NAME_1")) +
+  tm_fill(alpha = 0, id = "Nom_commune", 
+          popup.vars = c("Nom_commune","Nom_district", "Nom_region", 
+                         "Nom_province")) +
   tm_basemap("OpenStreetMap")
 ```
 
-There are `r nrow(muni_makay)` municipalities that directly overlap with Makay: `r paste(muni_makay_names, collapse = ", ")`. There are `r nrow(muni_around_makay) - nrow(muni_makay)` municipalities that do not directly overlap with Makay PA but are located within a `r buff_size` km radius from Makay PA: `r paste(muni_around_ext_makay, collapse = ", ")`. 
+There are `r nrow(muni_makay)` municipalities that directly overlap with Makay: `r paste(muni_makay_names, collapse = ", ")`. There are `r nrow(muni_around_makay) - nrow(muni_makay)` municipalities that do not directly overlap with Makay PA but are located within a `r buff_size` km radius from Makay PA: `r paste(muni_around_ext_makay, collapse = ", ")`.
 
 ## Rainfall
 
 We use the CHIRPS data from NASA to estimate 3 day average rainfall on the Makay protected area. We compute the data using the package mapme.biodiversity [@mapme.biodiversity].
 
 ```{r rainfall}
-# Fetch data
+# We group Makay PA zones and communes to have an object with all areas of interest
+# We keep only one common field "name"
+aoi <- bind_rows(
+  filter(makay_ap, Statut == "Zone tampon"),
+  filter(makay_ap, Statut == "Noyau dur") %>% 
+    mutate(Statut = paste0(Statut, "_", 1:4))) %>%
+  select(name = Statut) %>%
+  bind_rows(
+    mutate(makay_union, name = "Ensemble")) %>%
+  mutate(name = paste0("AP Makay : ", name)) %>%
+  bind_rows(select(muni_around_makay, name = Nom_commune)) %>%
+  st_cast("POLYGON")
 
 
-# copy chirps locally (from S3 because very heavy)
-source("s3_utils.R")
-my_bucket <- get_bucket_df("fbedecarrats", region = "")
-chirps_files <- my_bucket %>%
-  filter(str_starts(Key, "mapme_biodiversity/chirps")) %>%
-  pluck("Key")
-
-map2(chirps_files, chirps_files, save_from_s3)
-
-aoi <- init_portfolio(makay_union, years = 1980:2021) %>%
+aoi <- init_portfolio(aoi, years = 1980:2021) %>%
   get_resources("chirps")
 
 aoi2 <- aoi %>%
