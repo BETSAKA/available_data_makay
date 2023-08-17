@@ -7,6 +7,7 @@ format:
     output-file: index.html
     embed-resources: true
     standalone: true
+    code-fold: true
 execute:
   warning: false
   error: false
@@ -15,6 +16,10 @@ editor_options:
   chunk_output_type: console
 bibliography: references.bib
 ---
+
+## Introduction
+
+This interactive workbook aims at providing an overview of data sources that are potentially relevant for the analysis of economic, social and ecological dynamics in the area concerned by the creation of the Makay protected area.
 
 ## Working environment
 
@@ -40,8 +45,9 @@ library(SPEI) # to compute rainfall
 We load the Makay protected area boundaries.
 
 ```{r admin_data}
+#| fig-cap: "Makay protected area (source: Auréa?)"
 
-makay_ap <- st_read("data/Makay_wgs84.geojson") %>%
+makay_ap <- st_read("data/Makay_wgs84.geojson", quiet = TRUE) %>%
   rename(Statut = SOURCETHM) %>%
   mutate(Statut = recode(Statut, "zone tampon" = "Zone tampon"))
 
@@ -67,7 +73,8 @@ The protected area is composted of five polygons with different status: four pol
 
 We will now select all municipalities located within a 20km distance from the outer border of the Makay protected area (core or buffer zone).
 
-```{r make_buffer}
+```{r municipalities}
+#| fig-cap: "Surrounding municipalities (source: GADM)"
 
 buff_size <- 20
 # Create a 20km buffer around Makay PA
@@ -110,6 +117,8 @@ There are `r nrow(muni_makay)` municipalities that directly overlap with Makay: 
 We use the CHIRPS data from NASA to estimate 3 day average rainfall on the Makay protected area.The source data has a spatial resolution of 0.05° (about 5km). We compute the data using the package mapme.biodiversity [@mapme.biodiversity].
 
 ```{r rainfall}
+#| fig-cap: "Rainfalls on Makay PA (source : CHIRPS, 3 day rolling average)"
+
 # We group Makay PA zones and communes to have an object with all areas of interest
 # We keep only one common field "name"
 aoi <- bind_rows(
@@ -165,18 +174,20 @@ precip_3d %>%
 We use the Tropical cyclone best track data (IBTrACS) to get history of cyclone trajectories and cyclone attributes [@knapp_international_2010], as well as raw code from [@mapme.protectedareas].
 
 ```{r cyclones}
+#| fig-cap: "Cyclone trajectories, dates and intensity (source: IBTrACS)"
+
 if (!file.exists("data/ibtracs/IBTrACS.since1980.list.v04r00.lines.shp")) {
   dir.create("data/ibtracs")
   download.file(url = "https://www.ncei.noaa.gov/data/international-best-track-archive-for-climate-stewardship-ibtracs/v04r00/access/shapefile/IBTrACS.since1980.list.v04r00.lines.zip", 
                 destfile = "data/ibtracs/ibtracs_lines.zip")
-  unzip("data/ibtracs/ibtracs_lines.zip", exdir = "ibtracs")
+  unzip("data/ibtracs/ibtracs_lines.zip", exdir = "data/ibtracs")
 }
 
 mada <- gadm("MDG", level=0, path = "data") %>%
   st_as_sf()
 
 # column description is given here: https://www.ncei.noaa.gov/sites/default/files/2021-07/IBTrACS_v04_column_documentation.pdf
-cyclones <- read_sf("ibtracs/IBTrACS.since1980.list.v04r00.lines.shp")
+cyclones <- read_sf("data/ibtracs/IBTrACS.since1980.list.v04r00.lines.shp")
 
 # Create a buffer 300km around Madagascar
 mada_buff <- st_buffer(mada, 300)
@@ -206,7 +217,9 @@ The map shows that the Makay protected area has been hit by a number of signific
 
 This analysis is based on the example produced by Darius Goergen [on the Mapme website](https://mapme-initiative.github.io/mapme.biodiversity/articles/nasa-firms.html).
 
-```{r}
+```{r fires}
+#| fig-cap: "Fires in and around Makay PA (source: MODIS)"
+
 aoi_2 <- get_resources(aoi_1, "nasa_firms", instrument = "MODIS")
 
 gpkgs <- list.files(file.path("data", "nasa_firms"),
@@ -217,14 +230,16 @@ nasa_firms <- map_dfr(gpkgs, function(x) {
 nasa_firms <- nasa_firms[unlist(st_contains(aoi_2, nasa_firms)), ]
 nasa_firms <- filter(nasa_firms, confidence > 50)
 nasa_firms$year <- as.factor(year(nasa_firms$acq_date))
+# Remove year 2000 for visibility
+nasa_firms <- filter(nasa_firms, year != "2000")
 
 tmap_mode("plot")
 
-tm_shape(nasa_firms) %>%
+tm_shape(nasa_firms) +
   tm_dots(col = "darkorange", alpha = 0.1) + 
-  tm_facets(by = "year", nrow = 5, ncol = 4)
-  
-
+  tm_facets(by = "year", nrow = 5, ncol = 4) +
+  tm_shape(makay_union) + 
+  tm_borders(col = "red")
 ```
 
 
@@ -232,6 +247,19 @@ tm_shape(nasa_firms) %>%
 
 ## Conflicts
 
-## Biodiversity
+We use here the data for all type of conflicts from ACLED (Armed Conflict Location & Event Data Project (ACLED); www.acleddata.com), accessed on August 17th, 2023. ACLED data records violent events registered between 1997 and today. We spatially filter this data over the period of interest to keep only the occurrences in the 17 municipalities above.
 
+```{r}
+# Waiting for data access
+```
+
+
+## Species occurrences
+
+Use of the GBIF data.
+GBIF.org (17 August 2023) GBIF Occurrence Download https://doi.org/10.15468/dl.w6mtcs
+
+```{r}
+# Waiting for data access
+```
 
