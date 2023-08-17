@@ -13,14 +13,17 @@ We use R and a series of packages dedicated to spatial data and analysis.
 
 ```{r load_packages, warning=FALSE}
 library(aws.s3)
-library(tidyverse)
-library(geodata)
-library(sf)
-library(terra)
-library(mapme.biodiversity)
-library(tmap)
-library(zoo)
-library(units)
+library(tidyverse) # toolkit for data manipulation
+library(geodata) # to get municipalities
+library(sf) # to handle spatial data (vectors)
+library(terra) # to handle patial data (rasters)
+library(mapme.biodiversity) # to compute spatial indicators
+library(tmap) # nice maps
+library(zoo) # time series
+library(units) # ensures units are right
+library(future) # to parallelize computations
+library(exactextractr) # engine for mapme.biodiversity
+library(SPEI) # to compute rainfall  
 ```
 
 ## Makay protected area
@@ -62,7 +65,7 @@ makay_ext_buffer <- makay_union %>%
   st_buffer(dist = set_units(buff_size, km)) %>%
   st_as_sf()
 # Download Madagascar municipalities
-muni_mada <- gadm("MDG", level  =4, path = tempdir()) %>%
+muni_mada <- gadm("MDG", level  =4, path = "data") %>%
   st_as_sf() %>%
   rename(Nom_province = NAME_1, Nom_region = NAME_2, Nom_district = NAME_3,
          Nom_commune = NAME_4)
@@ -81,7 +84,7 @@ muni_around_ext_makay <- muni_around_makay_names[!(muni_around_makay_names %in%
 
 # Draw map
 tm_shape(makay_union) +
-  tm_borders(col = "red") + 
+  tm_borders(col = "red", lwd = 2) + 
   tm_shape(muni_around_makay) + 
   tm_borders(col = "blue") +
   tm_fill(alpha = 0, id = "Nom_commune", 
@@ -110,21 +113,30 @@ aoi <- bind_rows(
   bind_rows(select(muni_around_makay, name = Nom_commune)) %>%
   st_cast("POLYGON")
 
+# 
+# makay_union_pf <- init_portfolio(makay_union, years = 1990:2020) %>%
+#   get_resources("chirps")
+# 
+# makay_union_pf <- makay_union_pf %>%
+#   calc_indicators("precipitation_chirps",
+#                   engine = "exactextract",
+#                   scales_spi = 3,
+#                   spi_prev_years = 8)
+# plan(sequential)
+# we use parallel computing to reduce processing time
+plan(multisession, workers = 8)
 
-aoi <- init_portfolio(aoi, years = 1980:2021) %>%
+# Reference portfolio (chirps data was loaded at startup)
+aoi <- init_portfolio(aoi, years = 1990:2020,
+                      outdir = "data") %>%
   get_resources("chirps")
 
-aoi2 <- aoi %>%
+# Compute precipitation
+aoi <- aoi %>%
   calc_indicators("precipitation_chirps",
                   engine = "exactextract",
                   scales_spi = 3,
                   spi_prev_years = 8)
-rainfall_androy <- aoi2[[16]][[1]]
-
-rainfall_androy %>%
-  mutate(rainfall_3d_mean = rollmean(absolute, k = 3, fill = NA)) %>%
-  ggplot(aes(x = dates, y = rainfall_3d_mean)) +
-  geom_line()
 ```
 
 ## Cyclones
