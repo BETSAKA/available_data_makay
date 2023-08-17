@@ -2,4 +2,5 @@
 .Rhistory
 .RData
 .Ruserdata
-chirps/*
+data/chirps/*
+data/gadm/*
