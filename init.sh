@@ -11,7 +11,7 @@ git clone $REPO_URL $WORK_DIR
 mc cp -r s3/fbedecarrats/mapme_biodiversity/chirps $WORK_DIR
 
 # Grant permission for the created folders/files
-chown -R onyxia:users $WORK_DIR $WORK_DIR/chirps # something gets wrong
+chown -R ${USERNAME}:${GROUPNAME} $WORK_DIR
 
 # launch RStudio in the right project
 # Copied from InseeLab UtilitR
