@@ -20,6 +20,7 @@ library(terra)
 library(mapme.biodiversity)
 library(tmap)
 library(zoo)
+library(units)
 ```
 
 ## A focus on the Androy protected area
@@ -27,51 +28,80 @@ library(zoo)
 We download the Makay protected area boundaries.
 
 ```{r admin_data}
-makay_ap <- st_read("data/Makay_wgs84.geojson")
+makay_ap <- st_read("data/Makay_wgs84.geojson") %>%
+  rename(Statut = SOURCETHM) %>%
+  mutate(Statut = recode(Statut, "zone tampon" = "Zone tampon"))
+
+# Fist we dissolve the different areas
+makay_union <- makay_ap %>%
+  st_union() %>%
+  st_sf() %>%
+  st_make_valid()
+
 # Draw map
 tmap_mode("view")
 tm_shape(makay_ap) +
+  tm_polygons(col = "Statut", alpha = 0.5) +
+  tm_shape(makay_union) +
   tm_borders(col = "red") + 
   tm_basemap("OpenStreetMap")
 ```
 
-We also load the perimeters of administrative areas
+The protected area is composted of five polygons with different status: four polygons are cores, and one polygon is a buffer area.
 
-```{r}
-# On crée une forme fusionnant les parties de Makay
-makay_ap_all <- st_union(makay_ap)
+We will now select all municipalities located within a 20km distance from the outer border of the Makay protected area (core or buffer zone). 
 
-mada <- gadm("MDG", level = 0, path = tempdir()) %>%
+```{r make_buffer}
+buff_size <- 20
+# Create a 20km buffer around Makay PA
+makay_ext_buffer <- makay_union %>%
+  st_buffer(dist = set_units(buff_size, km)) %>%
+  st_as_sf()
+# Download Madagascar municipalities
+muni_mada <- gadm("MDG", level  =4, path = tempdir()) %>%
   st_as_sf() 
-provinces_mada <- gadm("MDG", level = 1, path = tempdir()) %>%
-  st_as_sf() 
-regions_mada <- gadm("MDG", level = 2, path = tempdir()) %>%
-  st_as_sf() 
-communes_mada <- gadm("MDG", level  =4, path = tempdir()) %>%
-  st_as_sf() 
+# Select municipalities that intersect the buffer
+muni_makay <- muni_mada %>%
+  st_filter(makay_union, .predicate = st_intersects)
+muni_makay_names <- pluck(muni_makay, "NAME_4")
+muni_around_makay <- muni_mada %>%
+  st_filter(makay_ext_buffer, .predicate = st_intersects)
+muni_around_makay_names <- pluck(muni_around_makay, "NAME_4")
+muni_makay <- muni_mada %>%
+  st_filter(makay_union, .predicate = st_intersects)
 
-toliary <- provinces_mada %>%
-  filter(NAME_1 == "Toliary")
+muni_around_ext_makay <- muni_around_makay_names[!(muni_around_makay_names %in% 
+                                                     muni_makay_names)]
 
-communes_makay <- st_intersection(communes_mada, makay_ap)
-  
-tmap_mode("view")
-tm_shape(makay_ap) +
+# Draw map
+tm_shape(makay_union) +
   tm_borders(col = "red") + 
-  tm_shape(toliary) +
+  tm_shape(muni_around_makay) + 
   tm_borders(col = "blue") +
+  tm_fill(alpha = 0, id = "NAME_4", popup.vars = c("NAME_3", "NAME_2", "NAME_1")) +
   tm_basemap("OpenStreetMap")
 ```
 
-The municipality parially overlaps with the Ranomafana national park.
+There are `r nrow(muni_makay)` municipalities that directly overlap with Makay: `r paste(muni_makay_names, collapse = ", ")`. There are `r nrow(muni_around_makay) - nrow(muni_makay)` municipalities that do not directly overlap with Makay PA but are located within a `r buff_size` km radius from Makay PA: `r paste(muni_around_ext_makay, collapse = ", ")`. 
 
 ## Rainfall
 
-We use the CHIRPS data from NASA to estimate 3 day average rainfall on the Androy Municipality. We compute the data using the package mapme.biodiversity [@mapme.biodiversity].
+We use the CHIRPS data from NASA to estimate 3 day average rainfall on the Makay protected area. We compute the data using the package mapme.biodiversity [@mapme.biodiversity].
 
 ```{r rainfall}
 # Fetch data
-aoi <- init_portfolio(androy, years = 1980:2021) %>%
+
+
+# copy chirps locally (from S3 because very heavy)
+source("s3_utils.R")
+my_bucket <- get_bucket_df("fbedecarrats", region = "")
+chirps_files <- my_bucket %>%
+  filter(str_starts(Key, "mapme_biodiversity/chirps")) %>%
+  pluck("Key")
+
+map2(chirps_files, chirps_files, save_from_s3)
+
+aoi <- init_portfolio(makay_union, years = 1980:2021) %>%
   get_resources("chirps")
 
 aoi2 <- aoi %>%

@@ -8,6 +8,9 @@ REPO_URL=https://${GIT_PERSONAL_ACCESS_TOKEN}@github.com/fBedecarrats/available_
 git clone $REPO_URL $WORK_DIR
 chown -R onyxia:users $WORK_DIR
 
+# copy files
+mc cp -r s3/fbedecarrats/mapme_biodiversity/chirps $WORK_DIR
+
 # launch RStudio in the right project
 # Copied from InseeLab UtilitR
     echo \
