@@ -7,7 +7,7 @@ editor_options:
   chunk_output_type: console
 ---
 
-## Analysis
+## Working environment
 
 We use R and a series of packages dedicated to spatial data and analysis.
 
