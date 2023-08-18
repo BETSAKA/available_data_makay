@@ -62,8 +62,8 @@ tmap_mode("view")
 tm_shape(makay_ap) +
   tm_polygons(col = "Statut", alpha = 0.5) +
   tm_shape(makay_union) +
-  tm_borders(col = "red") + 
-  tm_add_legend(type = "fill", col = "red", labels = "Limite externe") +
+  tm_borders(col = "darkblue") + 
+  tm_add_legend(type = "fill", col = "darkblue", labels = "Limite externe") +
   tm_basemap("OpenStreetMap")
 ```
 
@@ -101,9 +101,9 @@ muni_around_ext_makay <- muni_around_makay_names[!(muni_around_makay_names %in%
 
 # Draw map
 tm_shape(makay_union) +
-  tm_borders(col = "red") + 
+  tm_borders(col = "darkblue") + 
   tm_shape(muni_around_makay) + 
-  tm_borders(col = "blue") +
+  tm_borders(col = "purple") +
   tm_fill(alpha = 0, id = "Nom_commune", 
           popup.vars = c("Nom_commune","Nom_district", "Nom_region", 
                          "Nom_province")) +
@@ -203,7 +203,7 @@ cyclones_mada <- cyclones %>%
   select(Season = SEASON, Name = NAME, Winds_in_knots = wind_combined)
 
 tm_shape(makay_union) + 
-  tm_borders(col = "red") + 
+  tm_borders(col = "darkblue") + 
   tm_shape(cyclones_mada) +
   tm_lines(col = "Season", lwd = "Winds_in_knots", scale = 3, palette = "Blues",
            popup.vars = c("Name", "Season", "Winds in knots" = "Winds_in_knots"),
@@ -217,7 +217,7 @@ The map shows that the Makay protected area has been hit by a number of signific
 
 This analysis is based on the example produced by Darius Goergen [on the Mapme website](https://mapme-initiative.github.io/mapme.biodiversity/articles/nasa-firms.html).
 
-```{r fires}
+```{r map_fires}
 #| fig-cap: "Fires in and around Makay PA (source: MODIS)"
 aoi_2 <- get_resources(aoi_1, "nasa_firms", instrument = "MODIS")
 
@@ -238,12 +238,12 @@ tm_shape(nasa_firms) +
   tm_dots(col = "darkorange", alpha = 0.1) + 
   tm_facets(by = "year", nrow = 5, ncol = 4) +
   tm_shape(makay_union) + 
-  tm_borders(col = "red")
+  tm_borders(col = "darkblue")
 ```
 
 Compute indicators on fires.
 
-```{r}
+```{r stats_fires}
 #| fig-cap: "Fire occurence count in Makay PA (source: MODIS)"
 
 aoi_2 <- aoi_2 %>%
@@ -256,8 +256,77 @@ fires %>%
   filter(name == "AP Makay : Ensemble" & year != 2000) %>%
   ggplot(aes(x = year, y = active_fire_counts, group = name)) + 
   geom_line(col = "darkorange")
+```
+
+## Forest cover and loss
+
+This data relies on global forest cover.
+
+```{r map_forest}
+#| fig-cap: "Forest cover in 2000 (source: GFW)"
+
+aoi_2 <- aoi_2 %>%
+  get_resources(c("gfw_treecover", "gfw_lossyear"))
+tc_2000 <- rast("data/gfw_treecover/Hansen_GFC-2021-v1.9_treecover2000_20S_040E.tif") %>%
+  crop(aoi_2)
+  
+
+tm_shape(tc_2000) +
+  tm_raster(title = "Forest cover in 2000 (%)", palette = "YlGn", style = "cont") +
+  tm_shape(makay_union) + 
+  tm_borders(col = "darkblue") + 
+  tm_layout(legend.outside = TRUE) + 
+  tm_add_legend(type = "line", labels = "Makay PA delimitation", col = "darkblue")
+```
+
+Forest cover loss
+
+```{r map_forest_loss}
+#| fig-cap: "Forest cover in 2000 and loss since (source: GFW)"
+
+lossyear <- rast("data/gfw_lossyear/Hansen_GFC-2021-v1.9_lossyear_20S_040E.tif") %>%
+  crop(aoi_2)
+loss <- lossyear
+values(loss) <- ifelse(values(lossyear) > 0, 1, NA)
+
+tm_shape(tc_2000) +
+  tm_raster(title = "Forest cover in 2000 (%)", palette = "YlGn", style = "cont") +
+  tm_shape(loss) + 
+  tm_raster(title = "Forest cover loss 2001-2021", 
+            style = "cat", breaks = c(0, 0.5, 1.5), palette = "red") +
+  tm_shape(makay_union) + 
+  tm_borders(col = "darkblue") + 
+  tm_layout(legend.outside = TRUE) + 
+  tm_add_legend(type = "line", labels = "Makay PA delimitation", 
+                col = "darkblue")
 
 ```
+
+
+Statistincs on forest cover loss
+
+```{r stats_loss}
+
+if (Sys.getenv("USER") == "onyxia") {
+  aoi_3 <- s3read_using(FUN = read_rds, object = "partage/makay/aoi_3.rds",
+                      bucket = "fbedecarrats", opts = list("region" = ""))
+} else {
+  aoi_3 <- aoi_2 %>%
+    calc_indicators("treecover_area", min_cover = 10, min_size = 0.5)
+  s3write_using(aoi_3, FUN = write_rds, object = "partage/makay/aoi_3.rds",
+                bucket = "fbedecarrats", opts = list("region" = ""))
+}
+
+treecover <- aoi_3 %>%
+  unnest(treecover_area)
+
+treecover %>%
+  filter(name == "AP Makay : Ensemble") %>%
+  ggplot(aes(x = year, y = treecover_area, group = name)) + 
+  geom_line(col = "darkgreen")
+  
+```
+
 
 ## Droughts
 
@@ -269,13 +338,10 @@ We use here the data for all type of conflicts from ACLED (Armed Conflict Locati
 # Waiting for data access
 ```
 
-
 ## Species occurrences
 
-Use of the GBIF data.
-GBIF.org (17 August 2023) GBIF Occurrence Download https://doi.org/10.15468/dl.w6mtcs
+Use of the GBIF data. GBIF.org (17 August 2023) GBIF Occurrence Download https://doi.org/10.15468/dl.w6mtcs
 
 ```{r}
 # Waiting for data access
 ```
-
