@@ -140,7 +140,7 @@ aoi <- init_portfolio(aoi, years = 1990:2020,
                       outdir = "data") 
 
 
-aoi_1 <- s3read_using(FUN = read_rds, object = "partage/makay/aoi_1.rds",
+aoi_1 <- s3read_using(FUN = read_rds, object = "diffusion/makay/aoi_1.rds",
                       bucket = "fbedecarrats", opts = list("region" = ""))
 
 if (!exists("aoi_1")) {
@@ -152,7 +152,7 @@ if (!exists("aoi_1")) {
                     engine = "exactextract",
                     scales_spi = 3,
                     spi_prev_years = 8)
-  s3write_using(aoi_1, FUN = write_rds, object = "partage/makay/aoi_1.rds",
+  s3write_using(aoi_1, FUN = write_rds, object = "diffusion/makay/aoi_1.rds",
                 bucket = "fbedecarrats", opts = list("region" = ""))
 }
 
@@ -308,23 +308,46 @@ Statistincs on forest cover loss
 ```{r stats_loss}
 
 if (Sys.getenv("USER") == "onyxia") {
-  aoi_3 <- s3read_using(FUN = read_rds, object = "partage/makay/aoi_3.rds",
+  aoi_3 <- s3read_using(FUN = read_rds, object = "diffusion/makay/aoi_3.rds",
                       bucket = "fbedecarrats", opts = list("region" = ""))
 } else {
   aoi_3 <- aoi_2 %>%
     calc_indicators("treecover_area", min_cover = 10, min_size = 0.5)
-  s3write_using(aoi_3, FUN = write_rds, object = "partage/makay/aoi_3.rds",
+  s3write_using(aoi_3, FUN = write_rds, object = "diffusion/makay/aoi_3.rds",
                 bucket = "fbedecarrats", opts = list("region" = ""))
 }
 
 treecover <- aoi_3 %>%
   unnest(treecover_area)
 
-treecover %>%
-  filter(name == "AP Makay : Ensemble") %>%
-  ggplot(aes(x = year, y = treecover_area, group = name)) + 
+treecover_makay <- treecover %>%
+  filter(name == "AP Makay : Ensemble")
+
+treecover_makay_2000 <- treecover_makay %>%
+  filter(years == 2000) %>%
+  pluck("treecover") %>%
+  round()
+treecover_makay_2020 <- treecover_makay %>%
+  filter(years == 2020) %>%
+  pluck("treecover") %>%
+  round()
+varcover <- (treecover_makay_2020 - treecover_makay_2000) / treecover_makay_2000
+
+treecover_makay %>%
+  ggplot(aes(x = years, y = treecover, group = name)) + 
   geom_line(col = "darkgreen")
   
+```
+
+
+Note that the amont loss looks great because the graph origin is not 0. In reality the observed loss goes from `r cat(treecover_makay_2000)` hectares in 2000 to `r cat(treecover_makay_2020)` hectares in 2020, that is a variation of `r round(varcover * 100, 2)` % in 20 years.
+
+With an origin at 0, here is what the graph looks like:
+
+```{r stats_loss_origin}
+treecover_makay %>%
+  ggplot(aes(x = years, y = treecover, group = name, ymin = 0)) + 
+  geom_line(col = "darkgreen")
 ```
 
 
@@ -332,11 +355,38 @@ treecover %>%
 
 ## Conflicts
 
-We use here the data for all type of conflicts from ACLED (Armed Conflict Location & Event Data Project (ACLED); www.acleddata.com), accessed on August 17th, 2023. ACLED data records violent events registered between 1997 and today. We spatially filter this data over the period of interest to keep only the occurrences in the 17 municipalities above.
+### ACLED data
+
+We use here the data for all type of conflicts from ACLED (Armed Conflict Location & Event Data Project (ACLED); www.acleddata.com), for which access was requested on August 17th, 2023. ACLED data records violent events registered between 1997 and today. For Madagascar, the dataset includes 2,079 events (761 battles, 639 riots, 50 explosions/remote violence and 629 events of violence against civilians), corresponding to 3,418 fatalities. There seems to be a strong biais towards recent events:
+
+![Events registered in Acled for Madagascar per year](media/Acled_event_count_Mada.jpg)
+
+See the content of these events at: 
+https://acleddata.com/dashboard/#/dashboard/482ED2989B52B6B45E87B1C592B0DB4B
+
+
+### UCDP data (1989-2022)
+
+
+More precisely, this is the [UCDP Georeferenced Event Dataset (GED) Global version 23.1](https://ucdp.uu.se/downloads/index.html#ged_global)
+
+> "This dataset is UCDP's most disaggregated dataset, covering individual events of organized violence (phenomena of lethal violence occurring at a given time and place). These events are sufficiently fine-grained to be geo-coded down to the level of individual villages, with temporal durations disaggregated to single, individual days."
 
 ```{r}
-# Waiting for data access
+ucd <- s3read_using(FUN = read_rds, 
+                    object = "diffusion/makay/GEDEvent_v23_1.rds",
+                    bucket = "fbedecarrats", opts = list("region" = "")) %>%
+  filter(country == "Madagascar (Malagasy)") %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+tmap_mode("view")
+tm_shape(ucd) +
+  tm_dots()
 ```
+
+It appears that there are very few occurrences referenced in this dataset.
+
+There are 47 occurrences registered in UCDP dataset. It appears to be very much focused on violent event involving public actors ("organized" violence).
 
 ## Species occurrences
 
