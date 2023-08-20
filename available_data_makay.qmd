@@ -302,7 +302,6 @@ tm_shape(tc_2000) +
 
 ```
 
-
 Statistincs on forest cover loss
 
 ```{r stats_loss}
@@ -339,7 +338,6 @@ treecover_makay %>%
   
 ```
 
-
 Note that the amont loss looks great because the graph origin is not 0. In reality the observed loss goes from `r cat(treecover_makay_2000)` hectares in 2000 to `r cat(treecover_makay_2020)` hectares in 2020, that is a variation of `r round(varcover * 100, 2)` % in 20 years.
 
 With an origin at 0, here is what the graph looks like:
@@ -349,7 +347,6 @@ treecover_makay %>%
   ggplot(aes(x = years, y = treecover, group = name, ymin = 0)) + 
   geom_line(col = "darkgreen")
 ```
-
 
 ## Droughts
 
@@ -361,12 +358,9 @@ We use here the data for all type of conflicts from ACLED (Armed Conflict Locati
 
 ![Events registered in Acled for Madagascar per year](media/Acled_event_count_Mada.jpg)
 
-See the content of these events at: 
-https://acleddata.com/dashboard/#/dashboard/482ED2989B52B6B45E87B1C592B0DB4B
-
+[Click here to explore on ACLED website the content of their database for Madagascar since 1997](https://acleddata.com/dashboard/#/dashboard/482ED2989B52B6B45E87B1C592B0DB4B).
 
 ### UCDP data (1989-2022)
-
 
 More precisely, this is the [UCDP Georeferenced Event Dataset (GED) Global version 23.1](https://ucdp.uu.se/downloads/index.html#ged_global)
 
