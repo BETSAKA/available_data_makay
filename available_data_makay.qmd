@@ -26,6 +26,12 @@ This interactive workbook aims at providing an overview of data sources that are
 We use R and a series of packages dedicated to spatial data and analysis.
 
 ```{r load_packages, warning=FALSE}
+
+if (!"geoarrow" %in% installed.packages()) {
+remotes::install_github("paleolimbot/geoarrow")
+}
+
+
 library(aws.s3)
 library(tidyverse) # toolkit for data manipulation
 library(geodata) # to get municipalities
@@ -38,6 +44,7 @@ library(units) # ensures units are right
 library(future) # to parallelize computations
 library(exactextractr) # engine for mapme.biodiversity
 library(SPEI) # to compute rainfall  
+library(geoarrow) # to write/read efficient spatial vector format
 ```
 
 ## Makay protected area
@@ -364,6 +371,7 @@ We use here the data for all type of conflicts from ACLED (Armed Conflict Locati
 
 More precisely, this is the [UCDP Georeferenced Event Dataset (GED) Global version 23.1](https://ucdp.uu.se/downloads/index.html#ged_global)
 
+)
 > "This dataset is UCDP's most disaggregated dataset, covering individual events of organized violence (phenomena of lethal violence occurring at a given time and place). These events are sufficiently fine-grained to be geo-coded down to the level of individual villages, with temporal durations disaggregated to single, individual days."
 
 ```{r}
@@ -387,5 +395,57 @@ There are 47 occurrences registered in UCDP dataset. It appears to be very much 
 Use of the GBIF data. GBIF.org (17 August 2023) GBIF Occurrence Download https://doi.org/10.15468/dl.w6mtcs
 
 ```{r}
-# Waiting for data access
+#| fig-cap: "Registered biodiversity observations (source: GBIF)"
+gbif <- read_tsv("data/gbif/gbif_data.csv") %>%
+  st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = 4326)
+
+
+gbif_makay <- gbif %>%
+  st_filter(makay_union, .predicate = st_intersects) %>%
+  select(-issue)
+
+tmap_mode("view") 
+tm_shape(gbif_makay) + 
+  tm_dots() +
+  tm_shape(makay_union) + 
+  tm_borders(col = "red")
+
 ```
+
+Event year 
+
+```{r}
+#| fig-cap: "Years of registered biodiversity observations (source: GBIF)"
+
+gbif_makay_stats <- gbif_makay %>%
+  st_drop_geometry() %>%
+  mutate(event_year = year(eventDate))
+
+gbif_makay_stats %>%
+  ggplot(aes(x = event_year)) +
+  geom_histogram()
+```
+
+
+## Accessibility
+
+From Weiss et al. 2018.
+
+```{r}
+aoi_4 <- aoi_3 %>%
+  get_resources("nelson_et_al", 
+                range_traveltime = c("5k_10k", "100k_200k", 
+                                     "500k_1mio", "1mio_5mio"))
+
+nelson_5k_10k <- rast("data/nelson_et_al/traveltime-5k_10k.tif") %>%
+  crop(mada, mask = TRUE)
+
+# values(nelson_5k_10k) <- ifelse(values(nelson_5k_10k) < 1000,
+#                                 values(nelson_5k_10k), 0)
+
+tmap_mode("plot") 
+tm_shape(nelson_5k_10k) + 
+  tm_raster(palette = "viridis",  style = "quantile", n = 20) + 
+  tm_layout(legend.outside = TRUE)
+```
+
