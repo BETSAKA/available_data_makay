@@ -12,6 +12,7 @@ mc cp -r s3/fbedecarrats/mapme_biodiversity/chirps $WORK_DIR/data
 mc cp -r s3/fbedecarrats/mapme_biodiversity/nasa_firms $WORK_DIR/data
 mc cp -r s3/fbedecarrats/mapme_biodiversity/gfw_treecover $WORK_DIR/data
 mc cp -r s3/fbedecarrats/mapme_biodiversity/gfw_lossyear $WORK_DIR/data
+mc cp -r s3/fbedecarrats/mapme_biodiversity/nelson_et_al $WORK_DIR/data
 
 # Grant permission for the created folders/files
 chown -R ${USERNAME}:${GROUPNAME} $WORK_DIR
