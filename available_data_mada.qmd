@@ -1,0 +1,109 @@
+---
+title: "Available data on Makay protected area"
+author: "Florent Bédécarrats"
+format: 
+  html: 
+    toc: true
+    output-file: index.html
+    embed-resources: true
+    standalone: true
+    code-fold: true
+execute:
+  warning: false
+  error: false
+editor: visual
+editor_options: 
+  chunk_output_type: console
+bibliography: references.bib
+---
+
+## Introduction
+
+This interactive workbook aims at providing an overview of data sources that are potentially relevant for the analysis of economic, social and ecological dynamics in the area concerned by the creation of the Makay protected area.
+
+## Working environment
+
+We use R and a series of packages dedicated to spatial data and analysis.
+
+```{r load_packages, warning=FALSE}
+
+if (!"geoarrow" %in% installed.packages()) {
+remotes::install_github("paleolimbot/geoarrow")
+}
+
+
+library(aws.s3)
+library(tidyverse) # toolkit for data manipulation
+library(geodata) # to get municipalities
+library(sf) # to handle spatial data (vectors)
+library(terra) # to handle patial data (rasters)
+library(mapme.biodiversity) # to compute spatial indicators
+library(tmap) # nice maps
+library(zoo) # time series
+library(units) # ensures units are right
+library(future) # to parallelize computations
+library(exactextractr) # engine for mapme.biodiversity
+library(SPEI) # to compute rainfall  
+library(geoarrow) # to write/read efficient spatial vector format
+```
+
+## Madagascar
+
+National borders
+
+```{r borders}
+#| fig-cap: "Surrounding municipalities (source: GADM)"
+
+# Download Madagascar municipalities
+mada <- gadm("MDG", level  = 0, path = "data") %>%
+  st_as_sf()  %>%
+  st_cast("POLYGON")
+
+```
+
+## Forest cover and loss
+
+This data relies on global forest cover for Madagascar
+
+```{r map_forest}
+#| fig-cap: "Forest cover in 2000 (source: GFW)"
+# Reference portfolio (chirps data was loaded at startup)
+mada <- init_portfolio(mada, years = 1990:2020,
+                      outdir = "data", add_resources = FALSE) 
+mada <- mada %>%
+  get_resources(c("gfw_treecover", "gfw_lossyear"))
+
+tifs_tc <- list.files(path = "data/gfw_treecover/", pattern = "tif", 
+                      full.names = TRUE) 
+tc <- sprc(lapply(tifs_tc, rast)) %>%
+  mosaic()
+
+tm_shape(tc) +
+  tm_raster(title = "Forest cover in 2000 (%)", palette = "YlGn", style = "cont") +
+  tm_shape(mada) +
+  tm_layout(legend.outside = TRUE) 
+```
+
+Forest cover loss
+
+```{r map_forest_loss}
+#| fig-cap: "Forest cover in 2000 and loss since (source: GFW)"
+
+tiffs_l <- list.files(path = "data/gfw_lossyear/", pattern = "tif", 
+                     full.names = TRUE)
+
+l <- sprc(lapply(tifs_l, rast)) %>%
+  mosaic()
+
+loss <- l
+values(loss) <- ifelse(values(l) > 0, 1, NA)
+
+tm_shape(tc_2000) +
+  tm_raster(title = "Forest cover in 2000 (%)", palette = "YlGn", style = "cont") +
+  tm_shape(loss) + 
+  tm_raster(title = "Forest cover loss 2001-2021", 
+            style = "cat", breaks = c(0, 0.5, 1.5), palette = "red") +
+  tm_shape(mada)  
+
+```
+
