@@ -124,21 +124,48 @@ download_firms_data <- function(token, target_directory) {
   dates <- seq(start_date, end_date, by="day")
   
   for (date in dates) {
-    formatted_date <- format(date, "%Y.%m.%d")
+    formatted_date <- format(date, "%Y.%m.%d") # Define this outside of tryCatch
     file_url <- paste0(base_url, formatted_date, ".txt")
     file_name <- paste0(formatted_date, ".txt")
     target_path <- file.path(target_directory, file_name)
 
-    if (!file.exists(target_path)) {
-      headers <- add_headers(Authorization = paste("Bearer", token))
-      response <- GET(file_url, headers)
-      
-      if (http_status(response)$category == "Success") {
-        writeBin(content(response, "raw"), target_path)
+    tryCatch({
+      # Check if file already exists locally
+      if (!file.exists(target_path)) {
+        # Set up headers for the request
+        headers <- add_headers(Authorization = paste("Bearer", token))
+        
+        # Download the file
+        response <- GET(file_url, headers)
+        
+        if (http_status(response)$category == "Success") {
+          # Write the content to a file
+          writeBin(content(response, "raw"), target_path)
+          cat("Downloaded to:", target_path, "\n")
+        } else {
+          cat("Failed to download for date:", formatted_date, ". Status:", http_status(response)$message, "\n")
+        }
+      } else {
+        cat("File for date", formatted_date, "already exists. Skipping download.", "\n")
       }
-    }
+    }, error = function(e) {
+      cat("Error on date:", formatted_date, ". Message:", e$message, "\n")
+    })
   }
 }
+
+# Find my token
+if (Sys.info()["effective_user"] == "onyxia") {
+  system("vault kv get -format=table onyxia-kv/fbedecarrats/earth_data", 
+         intern = TRUE) -> my_secret 
+  my_key_api <- my_secret %>%
+    pluck(17) %>%
+    str_remove("^\\b\\w+\\b *")
+} else { # otherwise you need to store your file encryption key 
+  # in a file named secret_zip_key
+  my_secret <- readLines("secret_api_key")
+}
+
 
 # Usage
 your_token <- my_key_api
