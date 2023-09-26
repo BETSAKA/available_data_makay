@@ -1,0 +1,195 @@
+---
+title: "Identification d’évènements concrets à élucider lors d’enquêtes terrain"
+author: "Florent Bédécarrats"
+format:
+  html:
+    code-summary: "Voir le code"
+    toc: true
+    output-file: index.html
+    embed-resources: true
+    standalone: true
+    code-fold: true
+execute:
+  warning: false
+  error: false
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+## Objet
+
+L'objectif de cette note est de guider les chercheuses et chercheurs effectuant une mission de terrain dans le Makay début octobre. Il s'agit de nourrir l'articulation entre les bras socioéconomique, ethnoécologique et anthropologique de l'étude en documentant à partir de sources tierces (données satellitaires principalement) des évènements concrets susceptibles d'être appréhendées dans chacun des bras. On a ainsi identifié des passages de cyclones, feux de brousse/forêt et périodes de pluie/sécheresse. De par leur nature, ces évènements concrets sont circonscrits dans le temps et l'espace et documenter leur chronologie et leur localisation dans les enquêtes de chacun des bras favorisera l'étalonnage, la comparabilité et les échanges entre les bras. Concrètement, un feu de brousse de grande ampleur survenu dans une zone déterminée est susceptible d'influencer les résultats de l'enquête OR pour les localités avoisinantes (bras socioéconomique), les écosystèmes et leur perception par les populations locales (bras ethnoécologique), ou encore les représentations captées par le bras anthropologique.
+
+## Méthodologie
+
+Par souci de transparence et pour être en mesure de reproduire les analyses plus tard, en actualisant ou non les données sources, on travaille sur R en mode notebook. Un seul document, archivé et versionné de manière rigoureuse, contient à la fois le texte d'analyse, les traitements de données (bloc de code ci-dessous) et les visualisations de résultats. 
+
+```{r load_libs}
+# Ci-dessous les librairies R utilisées pour cette analyse
+library(tidyverse) # pour la manipulation et visualisation de données
+library(sf) # pour traiter les données spatiales
+library(tmap) # pour générer des cartes
+library(aws.s3) # Pour accéder aux données volumineuses stockées en ligne
+library(geodata) # Pour avoir les frontières administratives
+library(curl) # Pour télécharge
+library(lubridate) # Pour manipuler des dates
+library(httr)
+```
+
+
+Nous avons les coordonnées suivantes:
+
+-   Beroroha 21°40.504'S -- 45°9.571'E
+-   Beronono 21°21.669'S -- 45°14.885'E
+-   Tsivoko 21°17.712'S -- 45°22.732'E
+-   Makaykely 21°28.074'S - 45°21.896'E
+-   Bivouac 21°13.369'S -- 45°19.516'E
+
+(Il s'agit d'un format "Degree Decimal Minutes (DDM)": pas de secondes fournies, mais des décimales de minutes).
+
+Nous les importons et les visualisons :
+
+```{r load_spatial_data}
+#| fig-cap: "Localisation prévue des visites de terrain"
+
+# Create a dataframe of the coordinates
+coordinates <- data.frame(
+  location = c("Beroroha", "Beronono", "Tsivoko", "Makaykely", "Bivouac"),
+  latitude = c("21°40.504’S", "21°21.669’S", "21°17.712’S", "21°28.074’S", "21°13.369’S"),
+  longitude = c("45°9.571’E", "45°14.885’E", "45°22.732’E", "45°21.896’E", "45°19.516’E")
+)
+
+# Function to parse DMS and convert to decimal degrees
+ddm_to_decimal <- function(dms){
+  # Extraire les degrés, minutes et secondes
+  parts <- regmatches(dms, gregexpr("[0-9.]+", dms))[[1]]
+  degree <- as.numeric(parts[1])
+  minute <- as.numeric(parts[2]) / 60
+  direction <- ifelse(grepl("S|W", dms), -1, 1)
+  
+  # Converstion au format décimal
+  decimal <- direction * (degree + minute)
+  
+  return(decimal)
+}
+
+
+# Apply function to each coordinate
+coordinates$latitude_decimal <- sapply(coordinates$latitude, ddm_to_decimal)
+coordinates$longitude_decimal <- sapply(coordinates$longitude, ddm_to_decimal)
+
+# Convertir les coordonnées en objet sf
+coordinates_sf <- st_as_sf(coordinates, 
+                           coords = c("longitude_decimal", "latitude_decimal"), 
+                           crs = 4326)
+
+
+makay_ap <- st_read("data/Makay_wgs84.geojson", quiet = TRUE) %>%
+  rename(Statut = SOURCETHM) %>%
+  mutate(Statut = recode(Statut, "zone tampon" = "Zone tampon"))
+
+# Fusion des différentes aires
+makay_union <- makay_ap %>%
+  st_union() %>%
+  st_sf() %>%
+  st_make_valid()
+
+# Carte superposant les différentes informations
+tmap_mode("view")
+tm_shape(makay_ap) +
+  tm_polygons(col = "Statut", alpha = 0.5) +
+  tm_shape(makay_union) +
+  tm_borders(col = "darkblue") + 
+  tm_shape(coordinates_sf) +
+  tm_dots(col = "purple", size = 0.1, labels = coordinates_sf$location) +
+  tm_text(text = "location", xmod = 9) +
+  tm_basemap("OpenStreetMap") +
+  tm_layout(title = "Locations", main.title.size = 1.5) +
+  tm_add_legend(type = "fill", col = "darkblue", labels = "Limite externe")
+```
+
+A partir de cette information, on va visualiser des informations récentes qui seraient intéressantes à documenter lors des entretiens de terrain.
+
+## Feux de brousse
+
+```{r}
+# Define the function
+download_firms_data <- function(token, target_directory) {
+  base_url <- "https://nrt4.modaps.eosdis.nasa.gov/api/v2/content/archives/FIRMS/noaa-20-viirs-c2/Southern_Africa/"
+  
+  # Generate dates for the last two months
+  end_date <- Sys.Date()
+  start_date <- end_date %m-% months(2)
+  dates <- seq(start_date, end_date, by="day")
+  
+  for (date in dates) {
+    formatted_date <- format(date, "%Y.%m.%d")
+    file_url <- paste0(base_url, formatted_date, ".txt")
+    file_name <- paste0(formatted_date, ".txt")
+    target_path <- file.path(target_directory, file_name)
+
+    if (!file.exists(target_path)) {
+      headers <- add_headers(Authorization = paste("Bearer", token))
+      response <- GET(file_url, headers)
+      
+      if (http_status(response)$category == "Success") {
+        writeBin(content(response, "raw"), target_path)
+      }
+    }
+  }
+}
+
+# Usage
+your_token <- my_key_api
+dir.create("data/firms")
+target_dir <- "data/firms"
+download_firms_data(your_token, target_dir)
+
+
+```
+
+
+## Cyclones et tempêtes tropicales
+
+On utilise les données du Tropical cyclone best track (IBTrACS) pour obtenir un historique du passage de cylones et leurs attributs [@knapp_international_2010], ainsi que du code source de [@mapme.protectedareas].
+
+```{r cyclones}
+#| fig-cap: "Cyclone trajectories, dates and intensity (source: IBTrACS)"
+
+if (!file.exists("data/ibtracs/IBTrACS.since1980.list.v04r00.lines.shp")) {
+  dir.create("data/ibtracs")
+  download.file(url = "https://www.ncei.noaa.gov/data/international-best-track-archive-for-climate-stewardship-ibtracs/v04r00/access/shapefile/IBTrACS.since1980.list.v04r00.lines.zip", 
+                destfile = "data/ibtracs/ibtracs_lines.zip")
+  unzip("data/ibtracs/ibtracs_lines.zip", exdir = "data/ibtracs")
+}
+
+mada <- gadm("MDG", level=0, path = "data") %>%
+  st_as_sf()
+
+# column description is given here: https://www.ncei.noaa.gov/sites/default/files/2021-07/IBTrACS_v04_column_documentation.pdf
+cyclones <- read_sf("data/ibtracs/IBTrACS.since1980.list.v04r00.lines.shp")
+
+# Create a buffer 300km around Madagascar
+mada_buff <- st_buffer(mada, 300)
+
+cyclones$wind_combined <- cyclones %>%
+  select(contains("WIND")) %>%
+  select(-WMO_WIND) %>%
+  st_drop_geometry() %>%
+  rowMeans(., na.rm = T)
+
+cyclones_mada <- cyclones %>%
+  st_intersection(mada_buff) %>%
+  select(`Année` = SEASON, Nom = NAME, `Vents en noeuds` = wind_combined)
+
+tm_shape(makay_union) + 
+  tm_borders(col = "darkblue") + 
+  tm_shape(cyclones_mada) +
+  tm_lines(col = "Année", lwd = "Vents en noeuds", scale = 3, palette = "Blues",
+           popup.vars = c("Année", "Année", "Vents en noeuds"),
+           legend.format = list(big.mark=""), popup.format = list(big.mark=""))
+
+```
+
+La carte montre que l'aire protégée de Makay a été frappée par plusieurs cyclones importants. En particulier, Freddy en 2023 et Bastiraï en 2022, tous deux avec des vents d'environ 57 nœuds (1 nœud = 1,825 km/h). Des cyclones de moindre importance avaient déjà frappé la région les années précédentes : Chedza en 2014 (vents d'environ 42 nœuds), Elita en 2005 (vents d'environ 52 nœuds).
