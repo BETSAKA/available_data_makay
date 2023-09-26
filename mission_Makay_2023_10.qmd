@@ -113,47 +113,9 @@ A partir de cette information, on va visualiser des informations récentes qui s
 
 ## Feux de brousse
 
+Pour cette visualisation, nous avons mobilisé des données provenant du satellite VIIRS (Visible Infrared Imaging Radiometer Suite). Les données téléchargées depuis le service FIRMS de la NASA portent uniquement sur les deux derniers mois. Elles incluent plusieurs variables, parmi lesquelles nous utilisons principalement la variable 'frp' (Fire Radiative Power) pour représenter l'intensité des incendies. Cette variable, exprimée en mégawatts (MW), quantifie le taux d'émission radiative des feux actifs, offrant une indication directe de l'intensité du feu. De plus, nous avons défini une zone d'intérêt autour de  la zone où l'enquête terrain sera réalisé et nous visualisons les données à l'intérieur de cette zone.  La carte  finale montre ces incendies avec une gradation de couleurs pour refléter l'intensité de chaque incendie.En cliquant sur les points, on peut consulter la date à laquelle le foyer a été enregistré par le satellite, ainsi que la probabilité qu'il s'agisse téellement d'un feu (classé en "élevée", "nominale" et "faible").
+
 ```{r}
-# Define the function
-download_firms_data <- function(token, target_directory) {
-  base_url <- "https://nrt4.modaps.eosdis.nasa.gov/api/v2/content/archives/FIRMS/noaa-20-viirs-c2/Southern_Africa/"
-  
-  # Generate dates for the last two months
-  end_date <- Sys.Date()
-  start_date <- end_date %m-% months(2)
-  dates <- seq(start_date, end_date, by="day")
-  
-  for (date in dates) {
-    formatted_date <- format(date, "%Y.%m.%d") # Define this outside of tryCatch
-    file_url <- paste0(base_url, formatted_date, ".txt")
-    file_name <- paste0(formatted_date, ".txt")
-    target_path <- file.path(target_directory, file_name)
-
-    tryCatch({
-      # Check if file already exists locally
-      if (!file.exists(target_path)) {
-        # Set up headers for the request
-        headers <- add_headers(Authorization = paste("Bearer", token))
-        
-        # Download the file
-        response <- GET(file_url, headers)
-        
-        if (http_status(response)$category == "Success") {
-          # Write the content to a file
-          writeBin(content(response, "raw"), target_path)
-          cat("Downloaded to:", target_path, "\n")
-        } else {
-          cat("Failed to download for date:", formatted_date, ". Status:", http_status(response)$message, "\n")
-        }
-      } else {
-        cat("File for date", formatted_date, "already exists. Skipping download.", "\n")
-      }
-    }, error = function(e) {
-      cat("Error on date:", formatted_date, ". Message:", e$message, "\n")
-    })
-  }
-}
-
 # Find my token
 if (Sys.info()["effective_user"] == "onyxia") {
   system("vault kv get -format=table onyxia-kv/fbedecarrats/earth_data", 
@@ -163,19 +125,73 @@ if (Sys.info()["effective_user"] == "onyxia") {
     str_remove("^\\b\\w+\\b *")
 } else { # otherwise you need to store your file encryption key 
   # in a file named secret_zip_key
-  my_secret <- readLines("secret_api_key")
+  my_key_api <- readLines("secret_api_key")
 }
 
-
-# Usage
-your_token <- my_key_api
+# Ensure folders are available
 dir.create("data/firms")
 target_dir <- "data/firms"
-download_firms_data(your_token, target_dir)
 
+# Download csv download list from NASA Earth data
+csv_url <- "https://nrt4.modaps.eosdis.nasa.gov/api/v2/content/details/FIRMS/noaa-20-viirs-c2/Southern_Africa?fields=all&formats=csv"
+csv_file <- "firms_data.csv"
+download.file(csv_url, csv_file)
 
+# Prepare download
+firms_data <- read_csv(csv_file)
+# A function to check locally and download missing files
+download_earthdata <- function(url, outdir = "data/firms", 
+                                   token = my_key_api) {
+  file_name <- basename(url)
+  target_path <- file.path(outdir, file_name)
+  header <- add_headers(Authorization = paste("Bearer", token))
+  # Check if the file is missing locally
+  if (!file.exists(target_path)) {
+    GET(url, header,
+        write_disk(target_path))
+   # print(url)
+  }
+}
+
+# Using purrr's map to iterate over each row of the dataframe
+purrr::map(firms_data$downloadsLink, download_earthdata)
+
+firms <- list.files("data/firms", full.names = TRUE) %>%
+  map_df(read_csv)
+firms_sf <- firms %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+buffer <- coordinates_sf %>%
+  filter(location == "Beronono") %>%
+  st_buffer(100000)
+
+firms_focus <- firms_sf %>%
+  st_intersection(buffer)
+
+breaks_frp <- c(min(firms_focus$frp), 
+                median(firms_focus$frp), 
+                max(firms_focus$frp))
+breaks_frp_5 <- quantile(firms_focus$frp, probs = seq(0, 1, by = 0.25), 
+                         na.rm = TRUE)
+
+tm_shape(firms_focus) + 
+  tm_dots(col = "frp", size = 0.2, alpha = 0.2, 
+          palette = c("blue", "cyan", "yellow", "orange", "red"),
+          border.col = NULL, breaks = breaks_frp_5,
+          popup.vars = c("acq_date", "confidence", "frp"),
+          title = "Fire radiative power") +
+  tm_layout(title = "Fires around Beronono") + 
+  tm_shape(makay_union) +
+  tm_borders(col = "darkblue") + 
+  tm_shape(coordinates_sf) +
+  tm_dots(col = "purple", size = 0.1, labels = coordinates_sf$location) +
+  tm_view(set.view = c(10)) +
+  tm_text(text = "location", ymod = -0.5) +
+  tm_basemap("OpenStreetMap") +
+  tm_scale_bar()
 ```
 
+Cette carte pourra être rafraichie jour après jour. A la date d'aujourd'hui (26/09/2023), on constate relativement peu d'incendie. Un semble avoir eu lieu à 4km au Nord-Est de Beroroha le 09/08/2023, avec un FRP de 21, mais il ne semble pas avoir duré plus d'une journée. Une série de foyers ont aussi été relevés le 25/08/2023 à 3km à l'Est de Beronono.
 
 ## Cyclones et tempêtes tropicales
 
@@ -191,11 +207,12 @@ if (!file.exists("data/ibtracs/IBTrACS.since1980.list.v04r00.lines.shp")) {
   unzip("data/ibtracs/ibtracs_lines.zip", exdir = "data/ibtracs")
 }
 
-mada <- gadm("MDG", level=0, path = "data") %>%
-  st_as_sf()
 
 # column description is given here: https://www.ncei.noaa.gov/sites/default/files/2021-07/IBTrACS_v04_column_documentation.pdf
 cyclones <- read_sf("data/ibtracs/IBTrACS.since1980.list.v04r00.lines.shp")
+
+mada <- gadm("MDG", level=0, path = "data") %>%
+  st_as_sf()
 
 # Create a buffer 300km around Madagascar
 mada_buff <- st_buffer(mada, 300)
