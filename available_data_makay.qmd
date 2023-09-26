@@ -371,8 +371,7 @@ We use here the data for all type of conflicts from ACLED (Armed Conflict Locati
 
 More precisely, this is the [UCDP Georeferenced Event Dataset (GED) Global version 23.1](https://ucdp.uu.se/downloads/index.html#ged_global)
 
-)
-> "This dataset is UCDP's most disaggregated dataset, covering individual events of organized violence (phenomena of lethal violence occurring at a given time and place). These events are sufficiently fine-grained to be geo-coded down to the level of individual villages, with temporal durations disaggregated to single, individual days."
+) \> "This dataset is UCDP's most disaggregated dataset, covering individual events of organized violence (phenomena of lethal violence occurring at a given time and place). These events are sufficiently fine-grained to be geo-coded down to the level of individual villages, with temporal durations disaggregated to single, individual days."
 
 ```{r}
 ucd <- s3read_using(FUN = read_rds, 
@@ -412,7 +411,7 @@ tm_shape(gbif_makay) +
 
 ```
 
-Event year 
+Event year
 
 ```{r}
 #| fig-cap: "Years of registered biodiversity observations (source: GBIF)"
@@ -425,7 +424,6 @@ gbif_makay_stats %>%
   ggplot(aes(x = event_year)) +
   geom_histogram()
 ```
-
 
 ## Accessibility
 
@@ -448,4 +446,3 @@ tm_shape(nelson_5k_10k) +
   tm_raster(palette = "viridis",  style = "quantile", n = 20) + 
   tm_layout(legend.outside = TRUE)
 ```
-
