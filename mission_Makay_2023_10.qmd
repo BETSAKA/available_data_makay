@@ -15,6 +15,7 @@ execute:
 editor: visual
 editor_options: 
   chunk_output_type: console
+bibliography: references.bib
 ---
 
 ## Objet
@@ -246,7 +247,7 @@ La carte montre que l'aire protégée de Makay a été frappée par plusieurs cy
 
 ## Deforestation récente
 
-On veut aussi observer des événements de déforestation qui auraient eu lieu récemment. On mobilise pour cela le jeu de données GFC. The Global Forest Cover dataset is derived from Landsat observations, to map forest extents and track changes over time at a global scale with a 30-meter resolution (Hansen et al. 2013). This dataset distinguishes between forest cover in 2000 and losses occurred each year from 2001 to 2022. It is a practical tool that has been widely adopted to evaluate the impact of protected areas on forest loss. However, the Global Forest Cover dataset has limitations, including potential misclassifications for atypical forest ecosystem or the challenges of distinguishing between natural forest and tree plantations. These challenges might prove critical for dry biomes where the global forest cover dataset is known for under-estimating forest cover and forest cover loss.  Ci-dessous on présente les données les plus récentes disponibles, en distinguant les perte de couvert forestier survenues avant 2021 et celles survenues en 2021 et 2022 (on n'a pas encore de données pour 2023). 
+On veut aussi observer des événements de déforestation qui auraient eu lieu récemment. Pour cela, nous utilisons le jeu de données GFC. Ce jeu de données est dérivé des observations de Landsat, permettant de cartographier les étendues forestières et de suivre les changements au fil du temps à l'échelle mondiale avec une résolution de 30 mètres (Hansen et al. 2013). Ce jeu de données distingue entre la couverture forestière en 2000 et les pertes survenues chaque année de 2001 à 2022. C'est un outil pratique qui a été largement adopté pour évaluer l'impact des zones protégées sur la perte forestière. Cependant, le jeu de données du GFC a des limites, dont des erreurs potentielles de classification pour les écosystèmes forestiers atypiques ou les difficultés à distinguer entre forêt naturelle et plantations d'arbres. Ces défis pourraient s'avérer cruciaux pour les biomes secs où le jeu de données sur la couverture forestière mondiale est connu pour sous-estimer la couverture et la perte forestière. Ci-dessous, nous présentons les données les plus récentes disponibles, en distinguant les pertes de couverture forestière survenues avant 2021 et celles survenues en 2021 et 2022 (nous n'avons pas encore de données pour 2023).
 
 ```{r}
 #| fig-cap: "Couvert forestier en 2000 et perte de couvert forestier depuis (source: GFC)"
@@ -304,4 +305,4 @@ A partir de ces éléments, les chercheuses et chercheurs peuvent envisager plus
 - Interroger des sources issues des autres bras pour apprécier si elles apportent des éléments concordants ou discordants;
 - Apporter un regard critique sur la pertinence et la fiabilité des sources de données mobilisés.
 
-
+## Références
