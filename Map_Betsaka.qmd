@@ -1,0 +1,238 @@
+---
+title: "Identification d’évènements concrets à élucider lors d’enquêtes terrain"
+author: "Florent Bédécarrats"
+format:
+  html:
+    code-summary: "Voir le code"
+    toc: true
+    output-file: index.html
+    embed-resources: true
+    standalone: true
+    code-fold: true
+execute:
+  warning: false
+  error: false
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+## Objet
+
+L'objectif de cette note est de guider les chercheuses et chercheurs effectuant une mission de terrain dans le Makay début octobre. Il s'agit de nourrir l'articulation entre les bras socioéconomique, ethnoécologique et anthropologique de l'étude en documentant à partir de sources tierces (données satellitaires principalement) des évènements concrets susceptibles d'être appréhendées dans chacun des bras. On a ainsi identifié des passages de cyclones, feux de brousse/forêt et périodes de pluie/sécheresse. De par leur nature, ces évènements concrets sont circonscrits dans le temps et l'espace et documenter leur chronologie et leur localisation dans les enquêtes de chacun des bras favorisera l'étalonnage, la comparabilité et les échanges entre les bras. Concrètement, un feu de brousse de grande ampleur survenu dans une zone déterminée est susceptible d'influencer les résultats de l'enquête OR pour les localités avoisinantes (bras socioéconomique), les écosystèmes et leur perception par les populations locales (bras ethnoécologique), ou encore les représentations captées par le bras anthropologique.
+
+## Méthodologie
+
+Par souci de transparence et pour être en mesure de reproduire les analyses plus tard, en actualisant ou non les données sources, on travaille sur R en mode notebook. Un seul document, archivé et versionné de manière rigoureuse, contient à la fois le texte d'analyse, les traitements de données (bloc de code ci-dessous) et les visualisations de résultats.
+
+```{r load_libs}
+# Ci-dessous les librairies R utilisées pour cette analyse
+library(tidyverse) # pour la manipulation et visualisation de données
+library(sf) # pour traiter les données spatiales
+library(tmap) # pour générer des cartes
+library(aws.s3) # Pour accéder aux données volumineuses stockées en ligne
+library(geodata) # Pour avoir les frontières administratives
+library(curl) # Pour télécharge
+library(lubridate) # Pour manipuler des dates
+library(httr)
+```
+
+Nous avons les coordonnées suivantes:
+
+-   Beroroha 21°40.504'S -- 45°9.571'E
+-   Beronono 21°21.669'S -- 45°14.885'E
+-   Tsivoko 21°17.712'S -- 45°22.732'E
+-   Makaykely 21°28.074'S - 45°21.896'E
+-   Bivouac 21°13.369'S -- 45°19.516'E
+
+(Il s'agit d'un format "Degree Decimal Minutes (DDM)": pas de secondes fournies, mais des décimales de minutes).
+
+Nous les importons et les visualisons :
+
+```{r load_spatial_data}
+#| fig-cap: "Localisation prévue des visites de terrain"
+
+# Create a dataframe of the coordinates
+coordinates <- data.frame(
+  location = c("Beroroha", "Beronono", "Tsivoko", "Makaykely", "Bivouac"),
+  latitude = c("21°40.504’S", "21°21.669’S", "21°17.712’S", "21°28.074’S", "21°13.369’S"),
+  longitude = c("45°9.571’E", "45°14.885’E", "45°22.732’E", "45°21.896’E", "45°19.516’E")
+)
+
+# Function to parse DMS and convert to decimal degrees
+ddm_to_decimal <- function(dms){
+  # Extraire les degrés, minutes et secondes
+  parts <- regmatches(dms, gregexpr("[0-9.]+", dms))[[1]]
+  degree <- as.numeric(parts[1])
+  minute <- as.numeric(parts[2]) / 60
+  direction <- ifelse(grepl("S|W", dms), -1, 1)
+  
+  # Converstion au format décimal
+  decimal <- direction * (degree + minute)
+  
+  return(decimal)
+}
+
+
+# Apply function to each coordinate
+coordinates$latitude_decimal <- sapply(coordinates$latitude, ddm_to_decimal)
+coordinates$longitude_decimal <- sapply(coordinates$longitude, ddm_to_decimal)
+
+# Convertir les coordonnées en objet sf
+coordinates_sf <- st_as_sf(coordinates, 
+                           coords = c("longitude_decimal", "latitude_decimal"), 
+                           crs = 4326)
+
+
+makay_ap <- st_read("data/Makay_wgs84.geojson", quiet = TRUE) %>%
+  rename(Statut = SOURCETHM) %>%
+  mutate(Statut = recode(Statut, "zone tampon" = "Zone tampon"))
+
+# Fusion des différentes aires
+makay_union <- makay_ap %>%
+  st_union() %>%
+  st_sf() %>%
+  st_make_valid()
+
+# Carte superposant les différentes informations
+tmap_mode("view")
+tm_shape(makay_ap) +
+  tm_polygons(col = "Statut", alpha = 0.5) +
+  tm_shape(makay_union) +
+  tm_borders(col = "darkblue") + 
+  tm_shape(coordinates_sf) +
+  tm_dots(col = "purple", size = 0.1, labels = coordinates_sf$location) +
+  tm_text(text = "location", xmod = 9) +
+  tm_basemap("OpenStreetMap") +
+  tm_layout(title = "Locations", main.title.size = 1.5) +
+  tm_add_legend(type = "fill", col = "darkblue", labels = "Limite externe")
+```
+
+A partir de cette information, on va visualiser des informations récentes qui seraient intéressantes à documenter lors des entretiens de terrain.
+
+## Feux de brousse
+
+Pour cette visualisation, nous avons mobilisé des données provenant du satellite VIIRS (Visible Infrared Imaging Radiometer Suite). Les données téléchargées depuis le service FIRMS de la NASA portent uniquement sur les deux derniers mois. Elles incluent plusieurs variables, parmi lesquelles nous utilisons principalement la variable 'frp' (Fire Radiative Power) pour représenter l'intensité des incendies. Cette variable, exprimée en mégawatts (MW), quantifie le taux d'émission radiative des feux actifs, offrant une indication directe de l'intensité du feu. De plus, nous avons défini une zone d'intérêt autour de la zone où l'enquête terrain sera réalisé et nous visualisons les données à l'intérieur de cette zone. La carte finale montre ces incendies avec une gradation de couleurs pour refléter l'intensité de chaque incendie.En cliquant sur les points, on peut consulter la date à laquelle le foyer a été enregistré par le satellite, ainsi que la probabilité qu'il s'agisse téellement d'un feu (classé en "élevée", "nominale" et "faible").
+
+```{r}
+# Find my token
+if (Sys.info()["effective_user"] == "onyxia") {
+  system("vault kv get -format=table onyxia-kv/fbedecarrats/earth_data", 
+         intern = TRUE) -> my_secret 
+  my_key_api <- my_secret %>%
+    pluck(17) %>%
+    str_remove("^\\b\\w+\\b *")
+} else { # otherwise you need to store your file encryption key 
+  # in a file named secret_zip_key
+  my_key_api <- readLines("secret_api_key")
+}
+
+# Ensure folders are available
+dir.create("data/firms")
+target_dir <- "data/firms"
+
+# Download csv download list from NASA Earth data
+csv_url <- "https://nrt4.modaps.eosdis.nasa.gov/api/v2/content/details/FIRMS/noaa-20-viirs-c2/Southern_Africa?fields=all&formats=csv"
+csv_file <- "firms_data.csv"
+download.file(csv_url, csv_file)
+
+# Prepare download
+firms_data <- read_csv(csv_file)
+# A function to check locally and download missing files
+download_earthdata <- function(url, outdir = "data/firms", 
+                                   token = my_key_api) {
+  file_name <- basename(url)
+  target_path <- file.path(outdir, file_name)
+  header <- add_headers(Authorization = paste("Bearer", token))
+  # Check if the file is missing locally
+  if (!file.exists(target_path)) {
+    GET(url, header,
+        write_disk(target_path))
+   # print(url)
+  }
+}
+
+# Using purrr's map to iterate over each row of the dataframe
+purrr::map(firms_data$downloadsLink, download_earthdata)
+
+firms <- list.files("data/firms", full.names = TRUE) %>%
+  map_df(read_csv)
+firms_sf <- firms %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+buffer <- coordinates_sf %>%
+  filter(location == "Beronono") %>%
+  st_buffer(100000)
+
+firms_focus <- firms_sf %>%
+  st_intersection(buffer)
+
+breaks_frp <- c(min(firms_focus$frp), 
+                median(firms_focus$frp), 
+                max(firms_focus$frp))
+breaks_frp_5 <- quantile(firms_focus$frp, probs = seq(0, 1, by = 0.25), 
+                         na.rm = TRUE)
+
+tm_shape(firms_focus) + 
+  tm_dots(col = "frp", size = 0.2, alpha = 0.2, 
+          palette = c("blue", "cyan", "yellow", "orange", "red"),
+          border.col = NULL, breaks = breaks_frp_5,
+          popup.vars = c("acq_date", "confidence", "frp"),
+          title = "Fire radiative power") +
+  tm_layout(title = "Fires around Beronono") + 
+  tm_shape(makay_union) +
+  tm_borders(col = "darkblue") + 
+  tm_shape(coordinates_sf) +
+  tm_dots(col = "purple", size = 0.1, labels = coordinates_sf$location) +
+  tm_view(set.view = c(10)) +
+  tm_text(text = "location", ymod = -0.5) +
+  tm_basemap("OpenStreetMap") +
+  tm_scale_bar()
+```
+
+Cette carte pourra être rafraichie jour après jour. A la date d'aujourd'hui (26/09/2023), on constate relativement peu d'incendie. Un semble avoir eu lieu à 4km au Nord-Est de Beroroha le 09/08/2023, avec un FRP de 21, mais il ne semble pas avoir duré plus d'une journée. Une série de foyers ont aussi été relevés le 25/08/2023 à 3km à l'Est de Beronono.
+
+## Cyclones et tempêtes tropicales
+
+On utilise les données du Tropical cyclone best track (IBTrACS) pour obtenir un historique du passage de cylones et leurs attributs [@knapp_international_2010], ainsi que du code source de [@mapme.protectedareas].
+
+```{r cyclones}
+#| fig-cap: "Cyclone trajectories, dates and intensity (source: IBTrACS)"
+
+if (!file.exists("data/ibtracs/IBTrACS.since1980.list.v04r00.lines.shp")) {
+  dir.create("data/ibtracs")
+  download.file(url = "https://www.ncei.noaa.gov/data/international-best-track-archive-for-climate-stewardship-ibtracs/v04r00/access/shapefile/IBTrACS.since1980.list.v04r00.lines.zip", 
+                destfile = "data/ibtracs/ibtracs_lines.zip")
+  unzip("data/ibtracs/ibtracs_lines.zip", exdir = "data/ibtracs")
+}
+
+
+# column description is given here: https://www.ncei.noaa.gov/sites/default/files/2021-07/IBTrACS_v04_column_documentation.pdf
+cyclones <- read_sf("data/ibtracs/IBTrACS.since1980.list.v04r00.lines.shp")
+
+mada <- gadm("MDG", level=0, path = "data") %>%
+  st_as_sf()
+
+# Create a buffer 300km around Madagascar
+mada_buff <- st_buffer(mada, 300)
+
+cyclones$wind_combined <- cyclones %>%
+  select(contains("WIND")) %>%
+  select(-WMO_WIND) %>%
+  st_drop_geometry() %>%
+  rowMeans(., na.rm = T)
+
+cyclones_mada <- cyclones %>%
+  st_intersection(mada_buff) %>%
+  select(`Year` = SEASON, Nom = NAME, `Winds in knots` = wind_combined)
+
+tmap_mode("plot")
+tm_shape(mada) + 
+  tm_polygons() +
+  tm_shape(cyclones_mada) +
+  tm_lines(col = "Year", lwd = "Winds in knots", scale = 3, palette = "Blues",
+           legend.format = list(big.mark=""), popup.format = list(big.mark="")) + 
+  tm_layout(legend.outside = TRUE)
+```
+
+La carte montre que l'aire protégée de Makay a été frappée par plusieurs cyclones importants. En particulier, Freddy en 2023 et Bastiraï en 2022, tous deux avec des vents d'environ 57 nœuds (1 nœud = 1,825 km/h). Des cyclones de moindre importance avaient déjà frappé la région les années précédentes : Chedza en 2014 (vents d'environ 42 nœuds), Elita en 2005 (vents d'environ 52 nœuds).

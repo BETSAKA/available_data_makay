@@ -106,4 +106,3 @@ tm_shape(tc_2000) +
   tm_shape(mada)  
 
 ```
-

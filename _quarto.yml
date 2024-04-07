@@ -1,0 +1,29 @@
+project:
+  type: book
+  output-dir: docs
+
+book:
+  title: "Visualisation de données disponibles sur le Makay"
+  author: "Florent Bédécarrats"
+  date: "07/04/2024"
+  repo-url: https://github.com/fBedecarrats/available_data_makay
+  cover-image: media/Photo_Makay.jpg
+  cover-image-alt: Vue du Makay © Jean-Michel Wachsberger
+  chapters:
+    - index.qmd
+    - 01_carte_generale.qmd
+    - 02_climat.qmd
+    - 03_feux.qmd
+    - 03_foret.qmd
+    
+
+bibliography: references.bib
+
+format:
+  html:
+    theme: cosmo
+    code-fold: true
+
+execute:
+  warning: false
+  error: false

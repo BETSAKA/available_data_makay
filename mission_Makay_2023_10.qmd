@@ -23,7 +23,7 @@ L'objectif de cette note est de guider les chercheuses et chercheurs effectuant 
 
 ## Méthodologie
 
-Par souci de transparence et pour être en mesure de reproduire les analyses plus tard, en actualisant ou non les données sources, on travaille sur R en mode notebook. Un seul document, archivé et versionné de manière rigoureuse, contient à la fois le texte d'analyse, les traitements de données (bloc de code ci-dessous) et les visualisations de résultats. 
+Par souci de transparence et pour être en mesure de reproduire les analyses plus tard, en actualisant ou non les données sources, on travaille sur R en mode notebook. Un seul document, archivé et versionné de manière rigoureuse, contient à la fois le texte d'analyse, les traitements de données (bloc de code ci-dessous) et les visualisations de résultats.
 
 ```{r load_libs}
 # Ci-dessous les librairies R utilisées pour cette analyse
@@ -36,7 +36,6 @@ library(curl) # Pour télécharge
 library(lubridate) # Pour manipuler des dates
 library(httr)
 ```
-
 
 Nous avons les coordonnées suivantes:
 
@@ -113,7 +112,7 @@ A partir de cette information, on va visualiser des informations récentes qui s
 
 ## Feux de brousse
 
-Pour cette visualisation, nous avons mobilisé des données provenant du satellite VIIRS (Visible Infrared Imaging Radiometer Suite). Les données téléchargées depuis le service FIRMS de la NASA portent uniquement sur les deux derniers mois. Elles incluent plusieurs variables, parmi lesquelles nous utilisons principalement la variable 'frp' (Fire Radiative Power) pour représenter l'intensité des incendies. Cette variable, exprimée en mégawatts (MW), quantifie le taux d'émission radiative des feux actifs, offrant une indication directe de l'intensité du feu. De plus, nous avons défini une zone d'intérêt autour de  la zone où l'enquête terrain sera réalisé et nous visualisons les données à l'intérieur de cette zone.  La carte  finale montre ces incendies avec une gradation de couleurs pour refléter l'intensité de chaque incendie.En cliquant sur les points, on peut consulter la date à laquelle le foyer a été enregistré par le satellite, ainsi que la probabilité qu'il s'agisse téellement d'un feu (classé en "élevée", "nominale" et "faible").
+Pour cette visualisation, nous avons mobilisé des données provenant du satellite VIIRS (Visible Infrared Imaging Radiometer Suite). Les données téléchargées depuis le service FIRMS de la NASA portent uniquement sur les deux derniers mois. Elles incluent plusieurs variables, parmi lesquelles nous utilisons principalement la variable 'frp' (Fire Radiative Power) pour représenter l'intensité des incendies. Cette variable, exprimée en mégawatts (MW), quantifie le taux d'émission radiative des feux actifs, offrant une indication directe de l'intensité du feu. De plus, nous avons défini une zone d'intérêt autour de la zone où l'enquête terrain sera réalisé et nous visualisons les données à l'intérieur de cette zone. La carte finale montre ces incendies avec une gradation de couleurs pour refléter l'intensité de chaque incendie.En cliquant sur les points, on peut consulter la date à laquelle le foyer a été enregistré par le satellite, ainsi que la probabilité qu'il s'agisse téellement d'un feu (classé en "élevée", "nominale" et "faible").
 
 ```{r}
 # Find my token
