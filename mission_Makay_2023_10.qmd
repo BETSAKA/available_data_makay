@@ -15,6 +15,7 @@ execute:
 editor: visual
 editor_options: 
   chunk_output_type: console
+bibliography: references.bib
 ---
 
 ## Objet
@@ -35,6 +36,7 @@ library(geodata) # Pour avoir les frontières administratives
 library(curl) # Pour télécharge
 library(lubridate) # Pour manipuler des dates
 library(httr)
+library(mapme.biodiversity)
 ```
 
 Nous avons les coordonnées suivantes:
@@ -101,11 +103,12 @@ tm_shape(makay_ap) +
   tm_shape(makay_union) +
   tm_borders(col = "darkblue") + 
   tm_shape(coordinates_sf) +
-  tm_dots(col = "purple", size = 0.1, labels = coordinates_sf$location) +
-  tm_text(text = "location", xmod = 9) +
+  tm_dots(col = "black", size = 0.1, labels = coordinates_sf$location) +
+  tm_text(text = "location", ymod = -0.5) +
   tm_basemap("OpenStreetMap") +
   tm_layout(title = "Locations", main.title.size = 1.5) +
-  tm_add_legend(type = "fill", col = "darkblue", labels = "Limite externe")
+  tm_add_legend(type = "fill", col = "darkblue", labels = "Limite externe") +
+  tm_scale_bar()
 ```
 
 A partir de cette information, on va visualiser des informations récentes qui seraient intéressantes à documenter lors des entretiens de terrain.
@@ -114,7 +117,7 @@ A partir de cette information, on va visualiser des informations récentes qui s
 
 Pour cette visualisation, nous avons mobilisé des données provenant du satellite VIIRS (Visible Infrared Imaging Radiometer Suite). Les données téléchargées depuis le service FIRMS de la NASA portent uniquement sur les deux derniers mois. Elles incluent plusieurs variables, parmi lesquelles nous utilisons principalement la variable 'frp' (Fire Radiative Power) pour représenter l'intensité des incendies. Cette variable, exprimée en mégawatts (MW), quantifie le taux d'émission radiative des feux actifs, offrant une indication directe de l'intensité du feu. De plus, nous avons défini une zone d'intérêt autour de la zone où l'enquête terrain sera réalisé et nous visualisons les données à l'intérieur de cette zone. La carte finale montre ces incendies avec une gradation de couleurs pour refléter l'intensité de chaque incendie.En cliquant sur les points, on peut consulter la date à laquelle le foyer a été enregistré par le satellite, ainsi que la probabilité qu'il s'agisse téellement d'un feu (classé en "élevée", "nominale" et "faible").
 
-```{r}
+```{r fires1, eval=FALSE}
 # Find my token
 if (Sys.info()["effective_user"] == "onyxia") {
   system("vault kv get -format=table onyxia-kv/fbedecarrats/earth_data", 
@@ -154,7 +157,9 @@ download_earthdata <- function(url, outdir = "data/firms",
 
 # Using purrr's map to iterate over each row of the dataframe
 purrr::map(firms_data$downloadsLink, download_earthdata)
-
+```
+```{r fires2}
+#| fig-cap: "Feux relevés dans les deux derniers mois autour du parcours de la mission (Source: VIIRS-FIRMS)"
 firms <- list.files("data/firms", full.names = TRUE) %>%
   map_df(read_csv)
 firms_sf <- firms %>%
@@ -183,7 +188,7 @@ tm_shape(firms_focus) +
   tm_shape(makay_union) +
   tm_borders(col = "darkblue") + 
   tm_shape(coordinates_sf) +
-  tm_dots(col = "purple", size = 0.1, labels = coordinates_sf$location) +
+  tm_dots(col = "black", size = 0.1, labels = coordinates_sf$location) +
   tm_view(set.view = c(10)) +
   tm_text(text = "location", ymod = -0.5) +
   tm_basemap("OpenStreetMap") +
@@ -197,7 +202,7 @@ Cette carte pourra être rafraichie jour après jour. A la date d'aujourd'hui (2
 On utilise les données du Tropical cyclone best track (IBTrACS) pour obtenir un historique du passage de cylones et leurs attributs [@knapp_international_2010], ainsi que du code source de [@mapme.protectedareas].
 
 ```{r cyclones}
-#| fig-cap: "Cyclone trajectories, dates and intensity (source: IBTrACS)"
+#| fig-cap: "Trajectoirs, dates et intensité des cyclones et tempêtees tropicales (source: IBTrACS)"
 
 if (!file.exists("data/ibtracs/IBTrACS.since1980.list.v04r00.lines.shp")) {
   dir.create("data/ibtracs")
@@ -231,8 +236,72 @@ tm_shape(makay_union) +
   tm_shape(cyclones_mada) +
   tm_lines(col = "Année", lwd = "Vents en noeuds", scale = 3, palette = "Blues",
            popup.vars = c("Année", "Année", "Vents en noeuds"),
-           legend.format = list(big.mark=""), popup.format = list(big.mark=""))
+           legend.format = list(big.mark=""), popup.format = list(big.mark="")) +
+  tm_scale_bar()
 
 ```
 
 La carte montre que l'aire protégée de Makay a été frappée par plusieurs cyclones importants. En particulier, Freddy en 2023 et Bastiraï en 2022, tous deux avec des vents d'environ 57 nœuds (1 nœud = 1,825 km/h). Des cyclones de moindre importance avaient déjà frappé la région les années précédentes : Chedza en 2014 (vents d'environ 42 nœuds), Elita en 2005 (vents d'environ 52 nœuds).
+
+
+## Deforestation récente
+
+On veut aussi observer des événements de déforestation qui auraient eu lieu récemment. Pour cela, nous utilisons le jeu de données GFC. Ce jeu de données est dérivé des observations de Landsat, permettant de cartographier les étendues forestières et de suivre les changements au fil du temps à l'échelle mondiale avec une résolution de 30 mètres (Hansen et al. 2013). Ce jeu de données distingue entre la couverture forestière en 2000 et les pertes survenues chaque année de 2001 à 2022. C'est un outil pratique qui a été largement adopté pour évaluer l'impact des zones protégées sur la perte forestière. Cependant, le jeu de données du GFC a des limites, dont des erreurs potentielles de classification pour les écosystèmes forestiers atypiques ou les difficultés à distinguer entre forêt naturelle et plantations d'arbres. Ces défis pourraient s'avérer cruciaux pour les biomes secs où le jeu de données sur la couverture forestière mondiale est connu pour sous-estimer la couverture et la perte forestière. Ci-dessous, nous présentons les données les plus récentes disponibles, en distinguant les pertes de couverture forestière survenues avant 2021 et celles survenues en 2021 et 2022 (nous n'avons pas encore de données pour 2023).
+
+```{r}
+#| fig-cap: "Couvert forestier en 2000 et perte de couvert forestier depuis (source: GFC)"
+
+aoi <- makay_union %>%
+  st_cast("POLYGON") %>%
+  mutate(name = "Makay")
+
+aoi <- buffer %>%
+  init_portfolio(years = 2000:2022, outdir = "data") %>%
+  get_resources(c("gfw_treecover", "gfw_lossyear"))
+url_lossyear <- "https://storage.googleapis.com/earthenginepartners-hansen/GFC-2022-v1.10/Hansen_GFC-2022-v1.10_lossyear_20S_040E.tif"
+dest_lossyear <- "data/gfw_treecover/Hansen_GFC-2021-v1.9_lossyear_20S_040E.tif"
+download.file(url_lossyear, dest_lossyear)
+
+tc_2000 <- rast("data/gfw_treecover/Hansen_GFC-2021-v1.9_treecover2000_20S_040E.tif") %>%
+  crop(buffer)
+lossyear <- rast("data/gfw_lossyear/Hansen_GFC-2021-v1.9_lossyear_20S_040E.tif") %>%
+  crop(buffer)
+loss <- lossyear
+values(loss) <- ifelse(values(lossyear) > 0, 1, NA)
+loss_recent <- lossyear
+values(loss_recent) <- ifelse(values(lossyear) > 20, 1, NA)
+
+
+tm_shape(tc_2000) +
+  tm_raster(title = "Forest cover in 2000 (%)", palette = "YlGn", style = "cont") +
+  tm_shape(loss) + 
+  tm_raster(title = "Forest cover loss 2001-2020", 
+            style = "cat", breaks = c(0, 0.5, 1.5), palette = "red") +
+  tm_shape(loss_recent) + 
+  tm_raster(title = "Forest cover loss 2021-2022", 
+            style = "cat", breaks = c(0, 0.5, 1.5), palette = "purple") +
+  tm_shape(makay_union) + 
+  tm_borders(col = "darkblue") + 
+  tm_layout(legend.outside = TRUE) + 
+  tm_add_legend(type = "line", labels = "Makay PA delimitation", 
+                col = "darkblue") + 
+  tm_shape(coordinates_sf) +
+  tm_dots(col = "black", size = 0.1, labels = coordinates_sf$location) +
+  tm_text(text = "location", ymod = -0.5) +
+  tm_view(set.view = c(10)) +
+  tm_scale_bar()
+```
+
+On observe sur ces données les éléments suivants: 
+Peu de déforestation relevée en général. PRatiquement pas de points récents, hormis une occurence à 1km au Sud de Tsivoko et plus d'occurrence à une dizaine de kilomètres au Sud Est de Tsivoko.Quelques points plus anciens sont à signaler au Nord de Beronono.
+
+## Perspectives pour l'enquête de terrain
+
+A partir de ces éléments, les chercheuses et chercheurs peuvent envisager plusieurs choses :   
+
+- Observer sur le terrain si des traces de ces événements subsistent ;
+- Aborder ces événements dans le cadre des entretiens : les interlocuteurs en ont-ils un souvenir, peuvent-ils raconter ce qui s'est passé, comment en perçoivent-ils les causes et les conséquences ;
+- Interroger des sources issues des autres bras pour apprécier si elles apportent des éléments concordants ou discordants;
+- Apporter un regard critique sur la pertinence et la fiabilité des sources de données mobilisés.
+
+## Références
