@@ -1,2 +1,106 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
 # Carte générale
 
+```{r admin_data}
+#| fig-cap: "AP Makay (source: Bernard), carte administrative et projections de population (source: OCHA) et localités (source BNGRC)"
+
+library(tidyverse)
+library(tmap)
+library(sf)
+library(units)
+library(methods)
+
+
+makay_ap <- st_read("data/Makay_wgs84.geojson", quiet = TRUE) %>% 
+  rename(Statut = SOURCETHM) %>% 
+  mutate(Statut = recode(Statut, "zone tampon" = "Zone tampon"))
+
+# Fist we dissolve the different areas
+makay_union <- makay_ap %>% 
+  st_union() %>% 
+  st_sf() %>% 
+  st_make_valid()
+
+# Define the buffer size (in kilometers) for the square expansion
+buffer_size_km <- 60
+
+# Create a 20km buffer around Makay PA
+makay_buffer <- makay_union %>%
+  st_buffer(dist = set_units(buffer_size_km, km)) %>%
+  st_as_sf()
+
+# Load population estimations
+pop <- read_csv("data/population/mdg_admpop_adm4_2018.csv") %>%
+  select(ADM4_PCODE, pop = T_TL)
+
+# Read administrative area boundaries
+communes <- st_read(
+  "data/OCHA_BNGRC admin boundaries/mdg_admbnda_adm3_BNGRC_OCHA_20181031.shp",
+  quiet = TRUE) %>% 
+  st_make_valid()
+fokontany <- st_read(
+  "data/OCHA_BNGRC admin boundaries/mdg_admbnda_adm4_BNGRC_OCHA_20181031.shp",
+  quiet = TRUE) %>% 
+  st_make_valid()
+places <- st_read(
+  "data/OCHA_BNGRC populated places/mdg_pplp_places_NGA_OCHA.shp",
+  quiet = TRUE)
+
+# Crop communes and fokontany using the square buffer
+cropped_communes <- communes %>%
+  filter(st_intersects(., makay_buffer, sparse = FALSE))
+cropped_fokontany <- fokontany %>% 
+  filter(ADM3_PCODE %in% cropped_communes$ADM3_PCODE) %>% 
+  left_join(pop, by = "ADM4_PCODE") %>%
+  rename(Commune = ADM3_EN, Fokontany = ADM4_EN,
+         `Population 2018 (estimation)` = pop)
+cropped_places <- places %>% 
+  mutate(ADM3_PCODE = str_replace(COM_PCODE, "MDG", "MG"),
+         FOKONTANY_DEB = str_remove(DISTRICT, "Ville I")) %>%
+  filter(ADM3_PCODE %in% cropped_communes$ADM3_PCODE) %>%
+  mutate(Chef_lieu = case_when(
+    str_starts(FOKONTANY, PLACE_NAME) & str_starts(FOKONTANY, DISTRICT) ~ 
+      "District",
+    str_starts(FOKONTANY, PLACE_NAME)   & str_starts(FOKONTANY, COMMUNE) 
+    ~ "Commune",
+    str_starts(FOKONTANY, PLACE_NAME)  ~ "Fokontany",
+    .default = ""),
+    Chef_lieu = factor(Chef_lieu, levels = c("", "Fokontany", 
+                                             "Commune", "District")),
+    size_dot = case_when(
+      Chef_lieu == "" ~ 0.001,
+      Chef_lieu == "Fokontany" ~ 0.002, 
+      Chef_lieu == "Commune" ~ 0.005,
+      Chef_lieu == "District" ~ 0.007,
+      .default = 0.001))
+    
+
+# tm_shape(makay_ap, name = "Zones de l'AP") +
+#   tm_polygons(col = "Statut", alpha = 0.5) +
+tmap_mode("view")
+tm_shape(cropped_places, name = "Localités") +
+  tm_dots(size = "size_dot", size.max = 0.05, col = "Chef_lieu",
+          palette = c("lightgrey", "grey", "darkgrey", "black"),
+                      id = "PLACE_NAME",
+                      popup.vars = c("PLACE_NAME",
+                                     "FOKONTANY",
+                                     "COMMUNE")) +
+  tm_shape(makay_union, name = "Périmètre exterieur de l'AP") +
+  tm_borders(col = "darkgreen", lwd = 2) + 
+  tm_add_legend(type = "fill", col = "darkgreen", labels = "AP Makay") +
+  tm_shape(cropped_fokontany, name = "Fokontany") +
+  tm_borders(col = "grey") +
+  tm_fill(alpha = 0, id = "Fokontany",
+          popup.vars = c("Fokontany",
+                         "Population 2018 (estimation)",
+                         "Commune")) +
+  tm_shape(cropped_communes, name = "Communes") +
+  tm_borders(col = "black")  +
+  tm_basemap("OpenStreetMap") +
+  tm_view(dot.size.fixed = FALSE, set.view = 9)
+```

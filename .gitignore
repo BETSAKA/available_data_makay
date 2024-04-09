@@ -5,3 +5,4 @@
 data/*
 secret_api_key
 *.csv
+/.quarto/

@@ -1,0 +1,120 @@
+# Climat
+
+## Pluviométrie
+
+```{r}
+library(aws.s3)
+library(tidyverse) # toolkit for data manipulation
+library(geodata) # to get municipalities
+library(sf) # to handle spatial data (vectors)
+library(terra) # to handle patial data (rasters)
+library(mapme.biodiversity) # to compute spatial indicators
+library(tmap) # nice maps
+library(zoo) # time series
+library(units) # ensures units are right
+library(future) # to parallelize computations
+library(exactextractr) # engine for mapme.biodiversity
+library(SPEI) # to compute rainfall  
+library(geoarrow) # to write/read efficient spatial vector format
+```
+
+## Précipitations
+
+Nous utilisons les données CHIRPS de la NASA pour estimer la pluviométrie moyenne sur 3 jours dans la zone protégée de Makay. Les données sources ont une résolution spatiale de 0,05° (environ 5 km). Nous traitons les données à l'aide du package mapme.biodiversity [@mapme.biodiversity].
+
+```{r rainfall}
+#| fig-cap: "Précipitations sur l'AP Makay (source : CHIRPS, moyenne mobile sur 3 jours)"
+
+# We group Makay PA zones and communes to have an object with all areas of interest
+# We keep only one common field "name"
+aoi <- bind_rows(
+  filter(makay_ap, Statut == "Zone tampon"),
+  filter(makay_ap, Statut == "Noyau dur") %>% 
+    mutate(Statut = paste0(Statut, "_", 1:4))) %>%
+  select(name = Statut) %>%
+  bind_rows(
+    mutate(makay_union, name = "Ensemble")) %>%
+  mutate(name = paste0("AP Makay : ", name)) %>%
+  bind_rows(select(muni_around_makay, name = Nom_commune)) %>%
+  st_cast("POLYGON")
+
+# we use parallel computing to reduce processing time
+plan(multisession, workers = 8)
+
+# Reference portfolio (chirps data was loaded at startup)
+aoi <- init_portfolio(aoi, years = 1990:2020,
+                      outdir = "data") 
+
+
+aoi_1 <- s3read_using(FUN = read_rds, object = "diffusion/makay/aoi_1.rds",
+                      bucket = "fbedecarrats", opts = list("region" = ""))
+
+if (!exists("aoi_1")) {
+  aoi <- aoi %>%
+  get_resources("chirps")
+  # Compute precipitation
+  aoi_1 <- aoi %>%
+    calc_indicators("precipitation_chirps",
+                    engine = "exactextract",
+                    scales_spi = 3,
+                    spi_prev_years = 8)
+  s3write_using(aoi_1, FUN = write_rds, object = "diffusion/makay/aoi_1.rds",
+                bucket = "fbedecarrats", opts = list("region" = ""))
+}
+
+# We compute 3d average precipitations
+precip_3d <- aoi_1 %>%
+  unnest(precipitation_chirps) %>%
+  group_by(name) %>%
+  mutate(rainfall_3d_mean = rollmean(absolute, k = 3, fill = NA))
+
+# We display precipitations for Makay area
+precip_3d %>%
+  filter(name == "AP Makay : Ensemble") %>%
+  ggplot(aes(x = dates, y = rainfall_3d_mean)) +
+  geom_line()
+```
+
+## Cyclones
+
+Nous utilisons les données de suivu du climat IBTrACS pour obtenir l'historique des trajectoires des cyclones et les attributs des cyclones [@knapp_international_2010]. Cette procédure est fortement inspirée du code source de mapme.protectedareas [@mapme.protectedareas].
+
+```{r cyclones}
+#| fig-cap: "Cyclone trajectories, dates and intensity (source: IBTrACS)"
+
+if (!file.exists("data/ibtracs/IBTrACS.since1980.list.v04r00.lines.shp")) {
+  dir.create("data/ibtracs")
+  download.file(url = "https://www.ncei.noaa.gov/data/international-best-track-archive-for-climate-stewardship-ibtracs/v04r00/access/shapefile/IBTrACS.since1980.list.v04r00.lines.zip", 
+                destfile = "data/ibtracs/ibtracs_lines.zip")
+  unzip("data/ibtracs/ibtracs_lines.zip", exdir = "data/ibtracs")
+}
+
+mada <- gadm("MDG", level=0, path = "data") %>%
+  st_as_sf()
+
+# column description is given here: https://www.ncei.noaa.gov/sites/default/files/2021-07/IBTrACS_v04_column_documentation.pdf
+cyclones <- read_sf("data/ibtracs/IBTrACS.since1980.list.v04r00.lines.shp")
+
+# Create a buffer 300km around Madagascar
+mada_buff <- st_buffer(mada, 300)
+
+cyclones$wind_combined <- cyclones %>%
+  select(contains("WIND")) %>%
+  select(-WMO_WIND) %>%
+  st_drop_geometry() %>%
+  rowMeans(., na.rm = T)
+
+cyclones_mada <- cyclones %>%
+  st_intersection(mada_buff) %>%
+  select(Season = SEASON, Name = NAME, Winds_in_knots = wind_combined)
+
+tm_shape(makay_union) + 
+  tm_borders(col = "darkblue") + 
+  tm_shape(cyclones_mada) +
+  tm_lines(col = "Season", lwd = "Winds_in_knots", scale = 3, palette = "Blues",
+           popup.vars = c("Name", "Season", "Winds in knots" = "Winds_in_knots"),
+           legend.format = list(big.mark=""), popup.format = list(big.mark=""))
+
+```
+
+The map shows that the Makay protected area has been hit by a number of significant cyclones. Most notably, Freddy in 2023 and Bastiraï in 2022, both with winds of around 57 knots (1 knot = 1.825 km/h). Lesser cyclones had hit the area in previous years: Chedza in 2014 (winds around 42 knots), Elita in 2005 (winds around 52 knots).
