@@ -130,13 +130,13 @@ nasa_firms <- nasa_firms[unlist(st_contains(aoi, nasa_firms)), ]
 nasa_firms <- filter(nasa_firms, confidence > 50)
 nasa_firms$year <- as.factor(year(nasa_firms$acq_date))
 # Remove year 2000 for visibility
-nasa_firms <- filter(nasa_firms, year != "2000")
+nasa_firms <- filter(nasa_firms, year != "2000" & year != "2001")
 
 tmap_mode("plot")
 
 tm_shape(nasa_firms) +
   tm_dots(col = "darkorange", alpha = 0.1) + 
-  tm_facets(by = "year", nrow = 5, ncol = 4) +
+  tm_facets(by = "year", nrow = 6, ncol = 4) +
   tm_shape(makay_union) + 
   tm_borders(col = "darkblue")
 
