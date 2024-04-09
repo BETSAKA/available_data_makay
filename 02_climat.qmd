@@ -1,8 +1,12 @@
 # Climat
 
-## Pluviométrie
+## Précipitations
 
-```{r}
+Nous utilisons les données CHIRPS de la NASA pour estimer la pluviométrie moyenne sur 3 jours dans la zone protégée de Makay. Les données sources ont une résolution spatiale de 0,05° (environ 5 km). Nous traitons les données à l'aide du package mapme.biodiversity [@mapme.biodiversity].
+
+```{r rainfall}
+#| fig-cap: "Précipitations sur l'AP Makay (source : CHIRPS, moyenne mobile sur 3 jours)"
+
 library(aws.s3)
 library(tidyverse) # toolkit for data manipulation
 library(geodata) # to get municipalities
@@ -15,14 +19,6 @@ library(units) # ensures units are right
 library(future) # to parallelize computations
 library(exactextractr) # engine for mapme.biodiversity
 library(SPEI) # to compute rainfall  
-```
-
-## Précipitations
-
-Nous utilisons les données CHIRPS de la NASA pour estimer la pluviométrie moyenne sur 3 jours dans la zone protégée de Makay. Les données sources ont une résolution spatiale de 0,05° (environ 5 km). Nous traitons les données à l'aide du package mapme.biodiversity [@mapme.biodiversity].
-
-```{r rainfall}
-#| fig-cap: "Précipitations sur l'AP Makay (source : CHIRPS, moyenne mobile sur 3 jours)"
 
 makay_ap <- st_read("data/Makay_wgs84.geojson", quiet = TRUE) %>% 
   rename(Statut = SOURCETHM) %>% 
@@ -110,7 +106,7 @@ cyclones_mada <- cyclones %>%
 
 tmap_mode("view")
 tm_shape(makay_union) + 
-  tm_borders(col = "darkblue") + 
+  tm_borders(col = "darkgreen") + 
   tm_shape(cyclones_mada) +
   tm_lines(col = "Season", lwd = "Winds_in_knots", scale = 3, palette = "Blues",
            popup.vars = c("Name", "Season", "Winds in knots" = "Winds_in_knots"),
@@ -119,3 +115,5 @@ tm_shape(makay_union) +
 ```
 
 The map shows that the Makay protected area has been hit by a number of significant cyclones. Most notably, Freddy in 2023 and Bastiraï in 2022, both with winds of around 57 knots (1 knot = 1.825 km/h). Lesser cyclones had hit the area in previous years: Chedza in 2014 (winds around 42 knots), Elita in 2005 (winds around 52 knots).
+
+## Références

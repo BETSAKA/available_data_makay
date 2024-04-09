@@ -7,10 +7,6 @@ Il s'agit notamment de nourrir l'articulation entre les bras socioéconomique, e
 Par souci de transparence et pour être en mesure de reproduire les analyses plus tard, en actualisant ou non les données sources, on travaille avec le logiciel statistique R et le système de rendus quarto. Un seul document, archivé et versionné de manière rigoureuse, contient à la fois le texte d'analyse, les traitements de données (bloc de code ci-dessous) et les visualisations de résultats. L'ensemble du code source est accessible en cliquant sur l'icône en haut à gauche de l'écran.
 
 ```{r Installation et chargement des librairies requises}
-# # Le package est en cours de développement, toujours installer la version en cours
-if (!"geoarrow-r" %in% installed.packages()) {
-remotes::install_github("geoarrow/geoarrow-r")  # to write/read efficient spatial vector format
-}
 librairies_requises <- c( # On liste les librairies dont on a besoin
   "aws.s3", # Pour lire-écrire des données cloud (datalake SSP Cloud)
   "tidyverse", # toolkit for data manipulation
