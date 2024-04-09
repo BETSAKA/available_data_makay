@@ -116,4 +116,8 @@ tm_shape(makay_union) +
 
 The map shows that the Makay protected area has been hit by a number of significant cyclones. Most notably, Freddy in 2023 and Bastiraï in 2022, both with winds of around 57 knots (1 knot = 1.825 km/h). Lesser cyclones had hit the area in previous years: Chedza in 2014 (winds around 42 knots), Elita in 2005 (winds around 52 knots).
 
+## Sécheresses
+
+*(à développer)*
+
 ## Références

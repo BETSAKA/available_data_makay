@@ -6,3 +6,4 @@ data/*
 secret_api_key
 *.csv
 /.quarto/
+!firms_manual.csv

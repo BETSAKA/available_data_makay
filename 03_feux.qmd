@@ -1,0 +1,169 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+# Feux
+
+## Feux au cours de l'année écoulée 
+
+Pour cette visualisation, nous avons mobilisé des données provenant du satellite VIIRS (Visible Infrared Imaging Radiometer Suite). Les données téléchargées depuis le service FIRMS de la NASA portent uniquement sur les deux derniers mois. Elles incluent plusieurs variables, parmi lesquelles nous utilisons principalement la variable 'frp' (Fire Radiative Power) pour représenter l'intensité des incendies. Cette variable, exprimée en mégawatts (MW), quantifie le taux d'émission radiative des feux actifs, offrant une indication directe de l'intensité du feu. De plus, nous avons défini une zone d'intérêt autour de la zone où l'enquête terrain sera réalisé et nous visualisons les données à l'intérieur de cette zone. La carte finale montre ces incendies avec une gradation de couleurs pour refléter l'intensité de chaque incendie.En cliquant sur les points, on peut consulter la date à laquelle le foyer a été enregistré par le satellite, ainsi que la probabilité qu'il s'agisse téellement d'un feu (classé en "élevée", "nominale" et "faible").
+
+```{r}
+#| fig-cap: "Feux relevés au cours d'une année autour de la zone d'étude 9 avril 2023-8 avril 2024 (Source: VIIRS-FIRMS)"
+
+# Ci-dessous les librairies R utilisées pour cette analyse
+library(tidyverse) # pour la manipulation et visualisation de données
+library(sf) # pour traiter les données spatiales
+library(tmap) # pour générer des cartes
+library(aws.s3) # Pour accéder aux données volumineuses stockées en ligne
+library(geodata) # Pour avoir les frontières administratives
+library(curl) # Pour télécharge
+library(lubridate) # Pour manipuler des dates
+library(httr)
+library(mapme.biodiversity)
+library(units)
+
+# Create a dataframe of the coordinates
+coordinates <- data.frame(
+  location = c("Beroroha", "Beronono", "Tsivoko", "Makaykely"),
+  latitude = c("21°40.504’S", "21°21.669’S", "21°17.712’S", "21°28.074’S"),
+  longitude = c("45°9.571’E", "45°14.885’E", "45°22.732’E", "45°21.896’E")
+)
+
+# Function to parse DMS and convert to decimal degrees
+ddm_to_decimal <- function(dms){
+  # Extraire les degrés, minutes et secondes
+  parts <- regmatches(dms, gregexpr("[0-9.]+", dms))[[1]]
+  degree <- as.numeric(parts[1])
+  minute <- as.numeric(parts[2]) / 60
+  direction <- ifelse(grepl("S|W", dms), -1, 1)
+  
+  # Converstion au format décimal
+  decimal <- direction * (degree + minute)
+  
+  return(decimal)
+}
+
+# Apply function to each coordinate
+coordinates$latitude_decimal <- sapply(coordinates$latitude, ddm_to_decimal)
+coordinates$longitude_decimal <- sapply(coordinates$longitude, ddm_to_decimal)
+
+# Convertir les coordonnées en objet sf
+coordinates_sf <- st_as_sf(coordinates, 
+                           coords = c("longitude_decimal", "latitude_decimal"), 
+                           crs = 4326)
+
+
+makay_ap <- st_read("data/Makay_wgs84.geojson", quiet = TRUE) %>%
+  rename(Statut = SOURCETHM) %>%
+  mutate(Statut = recode(Statut, "zone tampon" = "Zone tampon"))
+
+# Fusion des différentes aires
+makay_union <- makay_ap %>%
+  st_union() %>%
+  st_sf() %>%
+  st_make_valid()
+
+# Manual request at https://firms.modaps.eosdis.nasa.gov/download/create.php
+# Uses the following coordinates : 44.4,-22.4,46.4,-19.9
+# For VIIRS NOAA-20
+firms_focus <- read_csv("firms_manual.csv") %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+
+breaks_frp <- c(min(firms_focus$frp), 
+                median(firms_focus$frp), 
+                max(firms_focus$frp))
+breaks_frp_5 <- quantile(firms_focus$frp, probs = seq(0, 1, by = 0.25), 
+                         na.rm = TRUE)
+tmap_mode("view")
+tm_shape(firms_focus) + 
+  tm_dots(col = "frp", size = 0.2, alpha = 0.2, 
+          palette = c("blue", "cyan", "yellow", "orange", "red"),
+          border.col = NULL, breaks = breaks_frp_5,
+          popup.vars = c("acq_date", "confidence", "frp"),
+          title = "Fire radiative power") +
+  tm_layout(title = "Fires around Beronono") + 
+  tm_shape(makay_union) +
+  tm_borders(col = "darkblue") + 
+  tm_shape(coordinates_sf) +
+  tm_dots(col = "black", size = 0.1, labels = coordinates_sf$location) +
+  tm_view(set.view = 10) +
+  tm_text(text = "location", ymod = -0.5) +
+  tm_basemap("OpenStreetMap") +
+  tm_scale_bar()
+
+```
+
+## Feux détectés sur deux décennies
+
+Ces données s'appuient sur les données MODIS qui sont moins précises mais couvrent une période plus longue. On compare le Makay avec une zone périphérique de 20km.
+This analysis is based on the example produced by Darius Goergen [on the Mapme website](https://mapme-initiative.github.io/mapme.biodiversity/articles/nasa-firms.html).
+
+```{r map_fires}
+#| fig-cap: "Fires in and around Makay PA (source: MODIS)"
+
+buff_size <- 20
+# Create a 20km buffer around Makay PA
+makay_ext_buffer <- makay_union %>%
+  st_buffer(dist = set_units(buff_size, km)) %>%
+  st_as_sf() %>%
+  st_difference(makay_union)
+
+aoi <- makay_union %>%
+  bind_rows(makay_ext_buffer) %>% 
+  st_cast("POLYGON") %>%
+  mutate(name = c("Makay", "Périphérie 20km"))
+
+aoi <- init_portfolio(aoi, years = 1990:2022,
+                      outdir = "data") 
+
+aoi <- get_resources(aoi, "nasa_firms", instrument = "MODIS")
+
+gpkgs <- list.files(file.path("data", "nasa_firms"),
+                    pattern = ".gpkg", full.names = TRUE)
+nasa_firms <- map_dfr(gpkgs, function(x) {
+  read_sf(x, wkt_filter = st_as_text(st_as_sfc(st_bbox(aoi))))
+})
+nasa_firms <- nasa_firms[unlist(st_contains(aoi, nasa_firms)), ]
+nasa_firms <- filter(nasa_firms, confidence > 50)
+nasa_firms$year <- as.factor(year(nasa_firms$acq_date))
+# Remove year 2000 for visibility
+nasa_firms <- filter(nasa_firms, year != "2000")
+
+tmap_mode("plot")
+
+tm_shape(nasa_firms) +
+  tm_dots(col = "darkorange", alpha = 0.1) + 
+  tm_facets(by = "year", nrow = 5, ncol = 4) +
+  tm_shape(makay_union) + 
+  tm_borders(col = "darkblue")
+
+
+```
+
+Compute indicators on fires.
+
+```{r stats_fires}
+#| fig-cap: "Fire occurence count in Makay PA (source: MODIS)"
+
+aoi <- aoi %>%
+  calc_indicators("active_fire_counts")
+
+fires <- aoi %>%
+  unnest(active_fire_counts)
+
+fires %>%
+  ggplot(aes(x = year, y = active_fire_counts, group = name, color = name)) + 
+  geom_line()
+
+area_makay <- st_area(makay_union) %>%
+  set_units("km2")
+area_buffer <- st_area(makay_ext_buffer) %>%
+  set_units("km2")
+
+```
+
+Les différents ordres de grandeur doivent être interprétés avec précaution car la zone périphérique est plus de deux fois plus vaste que l'aire protégée (3,751 km2 contre 8,249 km2).
+
