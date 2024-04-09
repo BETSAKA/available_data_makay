@@ -15,7 +15,6 @@ library(units) # ensures units are right
 library(future) # to parallelize computations
 library(exactextractr) # engine for mapme.biodiversity
 library(SPEI) # to compute rainfall  
-library(geoarrow) # to write/read efficient spatial vector format
 ```
 
 ## Précipitations
@@ -25,24 +24,25 @@ Nous utilisons les données CHIRPS de la NASA pour estimer la pluviométrie moye
 ```{r rainfall}
 #| fig-cap: "Précipitations sur l'AP Makay (source : CHIRPS, moyenne mobile sur 3 jours)"
 
+makay_ap <- st_read("data/Makay_wgs84.geojson", quiet = TRUE) %>% 
+  rename(Statut = SOURCETHM) %>% 
+  mutate(Statut = recode(Statut, "zone tampon" = "Zone tampon"))
+
+# Fist we dissolve the different areas
+makay_union <- makay_ap %>% 
+  st_union() %>% 
+  st_sf() %>% 
+  st_make_valid()
+
 # We group Makay PA zones and communes to have an object with all areas of interest
 # We keep only one common field "name"
-aoi <- bind_rows(
-  filter(makay_ap, Statut == "Zone tampon"),
-  filter(makay_ap, Statut == "Noyau dur") %>% 
-    mutate(Statut = paste0(Statut, "_", 1:4))) %>%
-  select(name = Statut) %>%
-  bind_rows(
-    mutate(makay_union, name = "Ensemble")) %>%
-  mutate(name = paste0("AP Makay : ", name)) %>%
-  bind_rows(select(muni_around_makay, name = Nom_commune)) %>%
-  st_cast("POLYGON")
+aoi <- makay_union
 
 # we use parallel computing to reduce processing time
 plan(multisession, workers = 8)
 
 # Reference portfolio (chirps data was loaded at startup)
-aoi <- init_portfolio(aoi, years = 1990:2020,
+aoi <- init_portfolio(aoi, years = 1990:2023,
                       outdir = "data") 
 
 
@@ -108,6 +108,7 @@ cyclones_mada <- cyclones %>%
   st_intersection(mada_buff) %>%
   select(Season = SEASON, Name = NAME, Winds_in_knots = wind_combined)
 
+tmap_mode("view")
 tm_shape(makay_union) + 
   tm_borders(col = "darkblue") + 
   tm_shape(cyclones_mada) +
