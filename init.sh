@@ -8,7 +8,7 @@ REPO_URL=https://${GIT_PERSONAL_ACCESS_TOKEN}@github.com/fBedecarrats/available_
 git clone $REPO_URL $WORK_DIR
 
 # copy heavy data sources
-mc cp -r s3/fbedecarrats/diffusion/mahay/data $WORK_DIR
+mc cp -r s3/fbedecarrats/diffusion/makay/data $WORK_DIR
 mc cp -r s3/fbedecarrats/diffusion/mapme_biodiversity/chirps $WORK_DIR/data
 mc cp -r s3/fbedecarrats/diffusion/mapme_biodiversity/nasa_firms $WORK_DIR/data
 mc cp -r s3/fbedecarrats/diffusion/mapme_biodiversity/gfw_treecover $WORK_DIR/data
