@@ -104,33 +104,39 @@ This analysis is based on the example produced by Darius Goergen [on the Mapme w
 ```{r map_fires}
 #| fig-cap: "Fires in and around Makay PA (source: MODIS)"
 
-buff_size <- 20
-# Create a 20km buffer around Makay PA
-makay_ext_buffer <- makay_union %>%
-  st_buffer(dist = set_units(buff_size, km)) %>%
-  st_as_sf() %>%
-  st_difference(makay_union)
-
-aoi <- makay_union %>%
-  bind_rows(makay_ext_buffer) %>% 
-  st_cast("POLYGON") %>%
-  mutate(name = c("Makay", "Périphérie 20km"))
-
-aoi <- init_portfolio(aoi, years = 1990:2022,
-                      outdir = "data") 
-
-aoi <- get_resources(aoi, "nasa_firms", instrument = "MODIS")
-
-gpkgs <- list.files(file.path("data", "nasa_firms"),
-                    pattern = ".gpkg", full.names = TRUE)
-nasa_firms <- map_dfr(gpkgs, function(x) {
-  read_sf(x, wkt_filter = st_as_text(st_as_sfc(st_bbox(aoi))))
-})
-nasa_firms <- nasa_firms[unlist(st_contains(aoi, nasa_firms)), ]
-nasa_firms <- filter(nasa_firms, confidence > 50)
-nasa_firms$year <- as.factor(year(nasa_firms$acq_date))
-# Remove year 2000 for visibility
-nasa_firms <- filter(nasa_firms, year != "2000" & year != "2001")
+if (!file.exists("nasa_firms.rds")) {
+  
+  buff_size <- 20
+  # Create a 20km buffer around Makay PA
+  makay_ext_buffer <- makay_union %>%
+    st_buffer(dist = set_units(buff_size, km)) %>%
+    st_as_sf() %>%
+    st_difference(makay_union)
+  
+  aoi <- makay_union %>%
+    bind_rows(makay_ext_buffer) %>% 
+    st_cast("POLYGON") %>%
+    mutate(name = c("Makay", "Périphérie 20km"))
+  
+  aoi <- init_portfolio(aoi, years = 1990:2022,
+                        outdir = "data") 
+  
+  aoi <- get_resources(aoi, "nasa_firms", instrument = "MODIS")
+  
+  gpkgs <- list.files(file.path("data", "nasa_firms"),
+                      pattern = ".gpkg", full.names = TRUE)
+  nasa_firms <- map_dfr(gpkgs, function(x) {
+    read_sf(x, wkt_filter = st_as_text(st_as_sfc(st_bbox(aoi))))
+  })
+  nasa_firms <- nasa_firms[unlist(st_contains(aoi, nasa_firms)), ]
+  nasa_firms <- filter(nasa_firms, confidence > 50)
+  nasa_firms$year <- as.factor(year(nasa_firms$acq_date))
+  # Remove year 2000 for visibility
+  nasa_firms <- filter(nasa_firms, year != "2000" & year != "2001")
+  write_rds(nasa_firms, "nasa_firms.rds")
+} else  {
+  nasa_firms <- read_rds("nasa_firms.rds")
+}
 
 tmap_mode("plot")
 
@@ -148,11 +154,16 @@ Compute indicators on fires.
 ```{r stats_fires}
 #| fig-cap: "Fire occurence count in Makay PA (source: MODIS)"
 
-aoi <- aoi %>%
-  calc_indicators("active_fire_counts")
-
-fires <- aoi %>%
-  unnest(active_fire_counts)
+if (!file.exists("fires.rds"))  {
+  aoi <- aoi %>%
+    calc_indicators("active_fire_counts")
+  
+  fires <- aoi %>%
+    unnest(active_fire_counts)
+  write_rds(fires, "fires.rds")
+} else  {
+  fires <- read_rds("fires.rds")
+}
 
 fires %>%
   ggplot(aes(x = year, y = active_fire_counts, group = name, color = name)) + 
