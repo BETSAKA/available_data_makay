@@ -1,0 +1,84 @@
+# Forêts
+
+On veut aussi observer des événements de déforestation qui auraient eu lieu récemment. Pour cela, nous utilisons le jeu de données GFC. Ce jeu de données est dérivé des observations de Landsat, permettant de cartographier les étendues forestières et de suivre les changements au fil du temps à l'échelle mondiale avec une résolution de 30 mètres (Hansen et al. 2013). Ce jeu de données distingue entre la couverture forestière en 2000 et les pertes survenues chaque année de 2001 à 2022. C'est un outil pratique qui a été largement adopté pour évaluer l'impact des zones protégées sur la perte forestière. Cependant, le jeu de données du GFC a des limites, dont des erreurs potentielles de classification pour les écosystèmes forestiers atypiques ou les difficultés à distinguer entre forêt naturelle et plantations d'arbres. Ces défis pourraient s'avérer cruciaux pour les biomes secs où le jeu de données sur la couverture forestière mondiale est connu pour sous-estimer la couverture et la perte forestière. Ci-dessous, nous présentons les données les plus récentes disponibles, en distinguant les pertes de couverture forestière survenues avant 2021 et celles survenues en 2021 et 2022 (nous n'avons pas encore de données pour 2023).
+
+```{r}
+#| fig-cap: "Couvert forestier en 2000 et perte de couvert forestier depuis (source: GFC)"
+
+# Ci-dessous les librairies R utilisées pour cette analyse
+library(tidyverse) # pour la manipulation et visualisation de données
+library(sf) # pour traiter les données spatiales
+library(tmap) # pour générer des cartes
+library(aws.s3) # Pour accéder aux données volumineuses stockées en ligne
+library(geodata) # Pour avoir les frontières administratives
+library(curl) # Pour télécharge
+library(lubridate) # Pour manipuler des dates
+library(httr)
+library(mapme.biodiversity)
+library(units)
+
+
+makay_ap <- st_read("data/Makay_wgs84.geojson", quiet = TRUE) %>%
+  rename(Statut = SOURCETHM) %>%
+  mutate(Statut = recode(Statut, "zone tampon" = "Zone tampon"))
+
+# Fusion des différentes aires
+makay_union <- makay_ap %>%
+  st_union() %>%
+  st_sf() %>%
+  st_make_valid()
+
+
+buff_size <- 20
+  # Create a 20km buffer around Makay PA
+  makay_ext_buffer <- makay_union %>%
+    st_buffer(dist = set_units(buff_size, km)) %>%
+    st_as_sf() %>%
+    st_difference(makay_union)
+  
+  aoi <- makay_union %>%
+    bind_rows(makay_ext_buffer) %>% 
+    st_cast("POLYGON") %>%
+    mutate(name = c("Makay", "Périphérie 20km"))
+  
+  aoi <- init_portfolio(aoi, years = 1990:2023,
+                        outdir = "data") 
+
+  aoi <- aoi %>%
+    init_portfolio(years = 2000:2022, outdir = "data") %>%
+    get_resources(c("gfw_treecover", "gfw_lossyear"))
+  url_lossyear <- "https://storage.googleapis.com/earthenginepartners-hansen/GFC-2022-v1.10/Hansen_GFC-2022-v1.10_lossyear_20S_040E.tif"
+  dest_lossyear <- "data/gfw_treecover/Hansen_GFC-2022-v1.10_lossyear_20S_040E.tif"
+  download.file(url_lossyear, dest_lossyear)
+  
+  tc_2000 <- rast("data/gfw_treecover/Hansen_GFC-2022v1.10_treecover2000_20S_040E.tif") %>%
+    crop(buffer)
+  lossyear <- rast("data/gfw_lossyear/Hansen_GFC-2021-v1.9_lossyear_20S_040E.tif") %>%
+    crop(buffer)
+  loss <- lossyear
+  values(loss) <- ifelse(values(lossyear) > 0, 1, NA)
+  loss_recent <- lossyear
+  values(loss_recent) <- ifelse(values(lossyear) > 20, 1, NA)
+  
+  
+  tm_shape(tc_2000) +
+    tm_raster(title = "Forest cover in 2000 (%)", palette = "YlGn", style = "cont") +
+    tm_shape(loss) + 
+    tm_raster(title = "Forest cover loss 2001-2020", 
+              style = "cat", breaks = c(0, 0.5, 1.5), palette = "red") +
+    tm_shape(loss_recent) + 
+    tm_raster(title = "Forest cover loss 2021-2022", 
+              style = "cat", breaks = c(0, 0.5, 1.5), palette = "purple") +
+    tm_shape(makay_union) + 
+    tm_borders(col = "darkblue") + 
+    tm_layout(legend.outside = TRUE) + 
+    tm_add_legend(type = "line", labels = "Makay PA delimitation", 
+                  col = "darkblue") + 
+    tm_shape(coordinates_sf) +
+    tm_dots(col = "black", size = 0.1, labels = coordinates_sf$location) +
+    tm_text(text = "location", ymod = -0.5) +
+    tm_view(set.view = c(10)) +
+    tm_scale_bar()
+  ```
+  
+On observe sur ces données les éléments suivants: Peu de déforestation relevée en général. PRatiquement pas de points récents, hormis une occurence à 1km au Sud de Tsivoko et plus d'occurrence à une dizaine de kilomètres au Sud Est de Tsivoko.Quelques points plus anciens sont à signaler au Nord de Beronono.
