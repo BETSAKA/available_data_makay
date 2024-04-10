@@ -14,7 +14,7 @@ book:
     - 01_carte_generale.qmd
     - 02_climat.qmd
     - 03_feux.qmd
-    # - 03_foret.qmd
+    - 04_forets.qmd
     
 
 bibliography: references.bib

@@ -2,7 +2,7 @@
 
 On veut aussi observer des événements de déforestation qui auraient eu lieu récemment. Pour cela, nous utilisons le jeu de données GFC. Ce jeu de données est dérivé des observations de Landsat, permettant de cartographier les étendues forestières et de suivre les changements au fil du temps à l'échelle mondiale avec une résolution de 30 mètres (Hansen et al. 2013). Ce jeu de données distingue entre la couverture forestière en 2000 et les pertes survenues chaque année de 2001 à 2022. C'est un outil pratique qui a été largement adopté pour évaluer l'impact des zones protégées sur la perte forestière. Cependant, le jeu de données du GFC a des limites, dont des erreurs potentielles de classification pour les écosystèmes forestiers atypiques ou les difficultés à distinguer entre forêt naturelle et plantations d'arbres. Ces défis pourraient s'avérer cruciaux pour les biomes secs où le jeu de données sur la couverture forestière mondiale est connu pour sous-estimer la couverture et la perte forestière. Ci-dessous, nous présentons les données les plus récentes disponibles, en distinguant les pertes de couverture forestière survenues avant 2021 et celles survenues en 2021 et 2022 (nous n'avons pas encore de données pour 2023).
 
-```{r}
+```{r warning=FALSE, message=FALSE}
 #| fig-cap: "Couvert forestier en 2000 et perte de couvert forestier depuis (source: GFC)"
 
 # Ci-dessous les librairies R utilisées pour cette analyse
@@ -16,6 +16,37 @@ library(lubridate) # Pour manipuler des dates
 library(httr)
 library(mapme.biodiversity)
 library(units)
+
+# Create a dataframe of the coordinates
+coordinates <- data.frame(
+  location = c("Beroroha", "Beronono", "Tsivoko", "Makaykely"),
+  latitude = c("21°40.504’S", "21°21.669’S", "21°17.712’S", "21°28.074’S"),
+  longitude = c("45°9.571’E", "45°14.885’E", "45°22.732’E", "45°21.896’E")
+)
+
+# Function to parse DMS and convert to decimal degrees
+ddm_to_decimal <- function(dms){
+  # Extraire les degrés, minutes et secondes
+  parts <- regmatches(dms, gregexpr("[0-9.]+", dms))[[1]]
+  degree <- as.numeric(parts[1])
+  minute <- as.numeric(parts[2]) / 60
+  direction <- ifelse(grepl("S|W", dms), -1, 1)
+  
+  # Converstion au format décimal
+  decimal <- direction * (degree + minute)
+  
+  return(decimal)
+}
+
+
+# Apply function to each coordinate
+coordinates$latitude_decimal <- sapply(coordinates$latitude, ddm_to_decimal)
+coordinates$longitude_decimal <- sapply(coordinates$longitude, ddm_to_decimal)
+
+# Convertir les coordonnées en objet sf
+coordinates_sf <- st_as_sf(coordinates, 
+                           coords = c("longitude_decimal", "latitude_decimal"), 
+                           crs = 4326)
 
 
 makay_ap <- st_read("data/Makay_wgs84.geojson", quiet = TRUE) %>%
@@ -31,9 +62,10 @@ makay_union <- makay_ap %>%
 
 buff_size <- 20
   # Create a 20km buffer around Makay PA
-  makay_ext_buffer <- makay_union %>%
+  buffer <- makay_union %>%
     st_buffer(dist = set_units(buff_size, km)) %>%
-    st_as_sf() %>%
+    st_as_sf() 
+  makay_ext_buffer <- buffer %>%
     st_difference(makay_union)
   
   aoi <- makay_union %>%
@@ -48,19 +80,21 @@ buff_size <- 20
     init_portfolio(years = 2000:2022, outdir = "data") %>%
     get_resources(c("gfw_treecover", "gfw_lossyear"))
   url_lossyear <- "https://storage.googleapis.com/earthenginepartners-hansen/GFC-2022-v1.10/Hansen_GFC-2022-v1.10_lossyear_20S_040E.tif"
-  dest_lossyear <- "data/gfw_treecover/Hansen_GFC-2022-v1.10_lossyear_20S_040E.tif"
-  download.file(url_lossyear, dest_lossyear)
+  dest_lossyear <- "data/gfw_lossyear/Hansen_GFC-2022-v1.10_lossyear_20S_040E.tif"
+  if(!file.exists(dest_lossyear)) {
+    download.file(url_lossyear, dest_lossyear)
+  }
   
-  tc_2000 <- rast("data/gfw_treecover/Hansen_GFC-2022v1.10_treecover2000_20S_040E.tif") %>%
+  tc_2000 <- rast("data/gfw_treecover/Hansen_GFC-2022-v1.10_treecover2000_20S_040E.tif") %>%
     crop(buffer)
   lossyear <- rast("data/gfw_lossyear/Hansen_GFC-2022-v1.10_lossyear_20S_040E.tif") %>%
     crop(buffer)
   loss <- lossyear
   values(loss) <- ifelse(values(lossyear) > 0, 1, NA)
   loss_recent <- lossyear
-  values(loss_recent) <- ifelse(values(lossyear) > 20, 1, NA)
+  values(loss_recent) <- ifelse(values(lossyear) > 21, 1, NA)
   
-  
+  tmap_mode("view")
   tm_shape(tc_2000) +
     tm_raster(title = "Forest cover in 2000 (%)", palette = "YlGn", style = "cont") +
     tm_shape(loss) + 
@@ -79,6 +113,7 @@ buff_size <- 20
     tm_text(text = "location", ymod = -0.5) +
     tm_view(set.view = c(10)) +
     tm_scale_bar()
-  ```
+  
+```
   
 On observe sur ces données les éléments suivants: Peu de déforestation relevée en général. PRatiquement pas de points récents, hormis une occurence à 1km au Sud de Tsivoko et plus d'occurrence à une dizaine de kilomètres au Sud Est de Tsivoko.Quelques points plus anciens sont à signaler au Nord de Beronono.
