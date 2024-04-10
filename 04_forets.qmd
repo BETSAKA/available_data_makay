@@ -53,7 +53,7 @@ buff_size <- 20
   
   tc_2000 <- rast("data/gfw_treecover/Hansen_GFC-2022v1.10_treecover2000_20S_040E.tif") %>%
     crop(buffer)
-  lossyear <- rast("data/gfw_lossyear/Hansen_GFC-2021-v1.9_lossyear_20S_040E.tif") %>%
+  lossyear <- rast("data/gfw_lossyear/Hansen_GFC-2022-v1.10_lossyear_20S_040E.tif") %>%
     crop(buffer)
   loss <- lossyear
   values(loss) <- ifelse(values(lossyear) > 0, 1, NA)
