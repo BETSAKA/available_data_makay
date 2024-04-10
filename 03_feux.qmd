@@ -7,9 +7,9 @@ editor_options:
 
 ## Feux au cours de l'année écoulée 
 
-Pour cette visualisation, nous avons mobilisé des données provenant du satellite VIIRS (Visible Infrared Imaging Radiometer Suite). Les données téléchargées depuis le service FIRMS de la NASA portent uniquement sur les deux derniers mois. Elles incluent plusieurs variables, parmi lesquelles nous utilisons principalement la variable 'frp' (Fire Radiative Power) pour représenter l'intensité des incendies. Cette variable, exprimée en mégawatts (MW), quantifie le taux d'émission radiative des feux actifs, offrant une indication directe de l'intensité du feu. De plus, nous avons défini une zone d'intérêt autour de la zone où l'enquête terrain sera réalisé et nous visualisons les données à l'intérieur de cette zone. La carte finale montre ces incendies avec une gradation de couleurs pour refléter l'intensité de chaque incendie.En cliquant sur les points, on peut consulter la date à laquelle le foyer a été enregistré par le satellite, ainsi que la probabilité qu'il s'agisse téellement d'un feu (classé en "élevée", "nominale" et "faible").
+Pour cette visualisation, nous avons mobilisé des données provenant du satellite VIIRS (Visible Infrared Imaging Radiometer Suite). Les données téléchargées depuis le service FIRMS de la NASA portent uniquement sur les douze derniers mois. Elles incluent plusieurs variables, parmi lesquelles nous utilisons principalement la variable 'frp' (Fire Radiative Power) pour représenter l'intensité des incendies. Cette variable, exprimée en mégawatts (MW), quantifie le taux d'émission radiative des feux actifs, offrant une indication directe de l'intensité du feu. De plus, nous avons défini une zone d'intérêt de 20km autour de l'aire protégée et nous visualisons les données à l'intérieur de cette zone. La carte finale montre ces incendies avec une gradation de couleurs pour refléter l'intensité de chaque incendie.En cliquant sur les points, on peut consulter la date à laquelle le foyer a été enregistré par le satellite, ainsi que la probabilité qu'il s'agisse téellement d'un feu (classé en "élevée", "nominale" et "faible").
 
-```{r}
+```{r librairies}
 #| fig-cap: "Feux relevés au cours d'une année autour de la zone d'étude 9 avril 2023-8 avril 2024 (Source: VIIRS-FIRMS)"
 
 # Ci-dessous les librairies R utilisées pour cette analyse
@@ -23,7 +23,10 @@ library(lubridate) # Pour manipuler des dates
 library(httr)
 library(mapme.biodiversity)
 library(units)
+```
 
+
+```{r feux_1an}
 # Create a dataframe of the coordinates
 coordinates <- data.frame(
   location = c("Beroroha", "Beronono", "Tsivoko", "Makaykely"),
@@ -65,11 +68,20 @@ makay_union <- makay_ap %>%
   st_sf() %>%
   st_make_valid()
 
+# Define the buffer size (in kilometers) for the square expansion
+buffer_size_km <- 20
+
+# Create a 20km buffer around Makay PA
+makay_buffer <- makay_union %>%
+  st_buffer(dist = set_units(buffer_size_km, km)) %>%
+  st_as_sf()
+
 # Manual request at https://firms.modaps.eosdis.nasa.gov/download/create.php
 # Uses the following coordinates : 44.4,-22.4,46.4,-19.9
 # For VIIRS NOAA-20
 firms_focus <- read_csv("firms_manual.csv") %>%
-  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>%
+  filter(lengths(st_within(., makay_buffer)) > 0)
 
 
 breaks_frp <- c(min(firms_focus$frp), 
@@ -78,13 +90,13 @@ breaks_frp <- c(min(firms_focus$frp),
 breaks_frp_5 <- quantile(firms_focus$frp, probs = seq(0, 1, by = 0.25), 
                          na.rm = TRUE)
 tmap_mode("view")
-tm_shape(firms_focus) + 
-  tm_dots(col = "frp", size = 0.2, alpha = 0.2, 
+tm_shape(firms_focus) +
+  tm_dots(col = "frp", size = 0.2, alpha = 0.2,
           palette = c("blue", "cyan", "yellow", "orange", "red"),
           border.col = NULL, breaks = breaks_frp_5,
           popup.vars = c("acq_date", "confidence", "frp"),
           title = "Fire radiative power") +
-  tm_layout(title = "Fires around Beronono") + 
+  tm_layout(title = "Feux détectés autour du Malay") +
   tm_shape(makay_union) +
   tm_borders(col = "darkblue") + 
   tm_shape(coordinates_sf) +
@@ -98,7 +110,7 @@ tm_shape(firms_focus) +
 
 ## Feux détectés sur deux décennies
 
-Ces données s'appuient sur les données MODIS qui sont moins précises mais couvrent une période plus longue. On compare le Makay avec une zone périphérique de 20km.
+Ces données s'appuient sur les données MODIS qui sont moins précises mais couvrent une période plus longue. On compare le Makay avec une zone périphérique de 60km.
 This analysis is based on the example produced by Darius Goergen [on the Mapme website](https://mapme-initiative.github.io/mapme.biodiversity/articles/nasa-firms.html).
 
 ```{r map_fires}
@@ -169,10 +181,10 @@ fires %>%
   ggplot(aes(x = year, y = active_fire_counts, group = name, color = name)) + 
   geom_line()
 
-area_makay <- st_area(makay_union) %>%
-  set_units("km2")
-area_buffer <- st_area(makay_ext_buffer) %>%
-  set_units("km2")
+# area_makay <- st_area(makay_union) %>%
+#   set_units("km2")
+# area_buffer <- st_area(makay_ext_buffer) %>%
+#   set_units("km2")
 
 ```
 
