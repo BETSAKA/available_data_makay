@@ -104,3 +104,68 @@ tm_shape(cropped_places, name = "Localités") +
   tm_basemap("OpenStreetMap") +
   tm_view(dot.size.fixed = FALSE, set.view = 9)
 ```
+
+
+Now we create a static map:
+
+```{r}
+
+# Make a rayshader
+library(terra)
+
+# Step 1: Load and merge DEM files using purrr::map and reduce
+dem_files <- list.files("data/nasa_srtm", full.names = TRUE)
+dem_list <- dem_files %>% map(rast)
+merged_dem <- reduce(dem_list, function(x, y) merge(x, y))
+
+# Define the extent around Beronono (buffer in kilometers)
+buffer_km <- c(north = 30, south = 30, east = 50, west = 50)
+buffer_deg <- buffer_km / 111  # Convert km to degrees
+
+# Create extent
+beronono_extent <- ext(
+  beronono_coords[1] - buffer_deg["west"],
+  beronono_coords[1] + buffer_deg["east"],
+  beronono_coords[2] - buffer_deg["south"],
+  beronono_coords[2] + buffer_deg["north"]
+)
+
+
+
+# Crop merged DEM to the defined extent
+cropped_dem <- crop(merged_dem, beronono_extent)
+
+
+plot(cropped_dem)
+plot(merged_dem)
+
+# Step 2: Compute slope and aspect
+slope <- terrain(cropped_dem, v = 'slope', unit = 'radians')
+aspect <- terrain(cropped_dem, v = 'aspect', unit = 'radians')
+
+# Generate the hillshade
+hillshade <- shade(slope, aspect, angle = 45, direction = 315)
+
+cropped_places2 <- cropped_places %>%
+  filter(Chef_lieu %in% c("Fokontany", "Commune", "District")) %>%
+  mutate(size_dot = case_when(
+      Chef_lieu == "Fokontany" ~ 0.02, 
+      Chef_lieu == "Commune" ~ 0.05,
+      Chef_lieu == "District" ~ 0.1))
+
+tmap_mode("plot")
+# tm_shape(hillshade_raster) +
+#   tm_raster(style = "cont", palette = "-Greys", legend.show = FALSE) +
+
+tm_shape(hillshade) + 
+  tm_raster(style = "cont", palette = "-Greys", legend.show = FALSE) +
+tm_shape(cropped_places2) +
+  tm_dots(size = "size_dot", size.max = 0.2, col = "Chef_lieu",
+          palette = c("lightblue", "blue", "darkblue")) + 
+  tm_legend(legend.outside = TRUE) +
+  tm_shape(makay_union, name = "Périmètre exterieur de l'AP") +
+  tm_borders(col = "darkgreen", lwd = 2) + 
+  tm_add_legend(type = "fill", col = "darkgreen", labels = "AP Makay")
+
+```
+

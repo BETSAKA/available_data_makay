@@ -14,6 +14,7 @@ librairies_requises <- c( # On liste les librairies dont on a besoin
   "sf", # to handle spatial data (vectors)
   "terra", # to handle patial data (rasters)
   "mapme.biodiversity", # to compute spatial indicators
+  "rstac", # necessary for mapme.biodiversity
   "tmap", # nice maps
   "zoo", # time series
   "units", # ensures units are right
