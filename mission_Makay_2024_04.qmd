@@ -164,7 +164,7 @@ if(!file.exists("data/firms_focus.rds")) {
   firms_focus <- firms_sf %>%
     st_intersection(buffer)
   
-  write_rds(firms_focus("data/firms_focus.rds"))
+  write_rds(firms_focus, "data/firms_focus.rds")
 } else {
   firms_focus <- read_rds("data/firms_focus.rds")
 }
@@ -176,9 +176,9 @@ breaks_frp_5 <- quantile(firms_focus$frp, probs = seq(0, 1, by = 0.25),
                          na.rm = TRUE)
 
 tm_shape(firms_focus) + 
-  tm_dots(col = "frp", size = 0.2, alpha = 0.2, 
+  tm_dots(col = "frp",  size = 1, alpha = 0.2, 
           palette = c("blue", "cyan", "yellow", "orange", "red"),
-          border.col = NULL, breaks = breaks_frp_5,
+          lwd = 0, breaks = breaks_frp_5,
           popup.vars = c("acq_date", "confidence", "frp"),
           title = "Fire radiative power") +
   tm_layout(title = "Fires around Beronono") + 

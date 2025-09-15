@@ -1,22 +1,4 @@
----
-title: "Identification d’évènements concrets à élucider lors d’enquêtes terrain"
-author: "Florent Bédécarrats"
-format:
-  html:
-    code-summary: "Voir le code"
-    toc: true
-    output-file: index.html
-    embed-resources: true
-    standalone: true
-    code-fold: true
-execute:
-  warning: false
-  error: false
-editor: visual
-editor_options: 
-  chunk_output_type: console
-bibliography: references.bib
----
+# Analyse spécifique pour la mission d'octobre 2023
 
 ## Objet
 
@@ -163,21 +145,30 @@ purrr::map(firms_data$downloadsLink, download_earthdata)
 #| fig-cap: "Feux relevés dans les deux derniers mois autour du parcours de la mission (Source: VIIRS-FIRMS)"
 firms_files <- list.files("data/firms", full.names = TRUE)
 
-firm
-
-# %>%
-  map_df(read_csv)
-
-
-firms_sf <- firms %>%
-  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
-
-buffer <- coordinates_sf %>%
-  filter(location == "Beronono") %>%
-  st_buffer(100000)
-
-firms_focus <- firms_sf %>%
-  st_intersection(buffer)
+if(!file.exists("data/firms_focus.rds")) {
+  
+  
+  firms_files <- list.files("data/firms", full.names = TRUE)
+  col_types <- read_csv(firms_files[1]) %>% spec()
+  firms <- map_df(
+    firms_files,
+    ~ read_csv(.x, col_types = col_types, show_col_types = FALSE)
+  )
+  
+  firms_sf <- firms %>%
+    st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+  
+  buffer <- coordinates_sf %>%
+    filter(location == "Beronono") %>%
+    st_buffer(100000)
+  
+  firms_focus <- firms_sf %>%
+    st_intersection(buffer)
+  
+  write_rds(firms_focus, "data/firms_focus.rds")
+} else {
+  firms_focus <- read_rds("data/firms_focus.rds")
+}
 
 breaks_frp <- c(min(firms_focus$frp), 
                 median(firms_focus$frp), 
@@ -257,20 +248,10 @@ On veut aussi observer des événements de déforestation qui auraient eu lieu r
 ```{r}
 #| fig-cap: "Couvert forestier en 2000 et perte de couvert forestier depuis (source: GFC)"
 
-aoi <- makay_union %>%
-  st_cast("POLYGON") %>%
-  mutate(name = "Makay")
 
-aoi <- buffer %>%
-  init_portfolio(years = 2000:2022, outdir = "data") %>%
-  get_resources(c("gfw_treecover", "gfw_lossyear"))
-url_lossyear <- "https://storage.googleapis.com/earthenginepartners-hansen/GFC-2022-v1.10/Hansen_GFC-2022-v1.10_lossyear_20S_040E.tif"
-dest_lossyear <- "data/gfw_treecover/Hansen_GFC-2021-v1.9_lossyear_20S_040E.tif"
-download.file(url_lossyear, dest_lossyear)
-
-tc_2000 <- rast("data/gfw_treecover/Hansen_GFC-2021-v1.9_treecover2000_20S_040E.tif") %>%
+tc_2000 <- rast("/vsis3/projet-betsaka/diffusion/PA-impact-on-deforestation/mapme/gfw_treecover/Hansen_GFC-2024-v1.12_treecover2000_20S_040E.tif") %>%
   crop(buffer)
-lossyear <- rast("data/gfw_lossyear/Hansen_GFC-2021-v1.9_lossyear_20S_040E.tif") %>%
+lossyear <- rast("/vsis3/projet-betsaka/diffusion/PA-impact-on-deforestation/mapme/gfw_treecover/Hansen_GFC-2024-v1.12_treecover2000_20S_040E.tif") %>%
   crop(buffer)
 loss <- lossyear
 values(loss) <- ifelse(values(lossyear) > 0, 1, NA)
