@@ -1,3 +1,8 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
 # Climat
 
 ## Précipitations
@@ -114,10 +119,65 @@ tm_shape(makay_union) +
 
 ```
 
-The map shows that the Makay protected area has been hit by a number of significant cyclones. Most notably, Freddy in 2023 and Bastiraï in 2022, both with winds of around 57 knots (1 knot = 1.825 km/h). Lesser cyclones had hit the area in previous years: Chedza in 2014 (winds around 42 knots), Elita in 2005 (winds around 52 knots).
+La carte montre que la zone protégée du Makay a été frappée par plusieurs cyclones importants. Notamment Freddy en 2023 et Bastiraï en 2022, tous deux avec des vents d’environ 57 nœuds (1 nœud = 1,825 km/h). Des cyclones moins puissants avaient touché la zone les années précédentes : Chedza en 2014 (environ 42 nœuds) et Elita en 2005 (environ 52 nœuds).
 
 ## Sécheresses
 
-*(à développer)*
+Le SPEI (Standardized Precipitation-Evapotranspiration Index) est un indicateur du stress hydrique permettant de caractériser l’occurrence et l’intensité des sécheresses. Il repose sur le bilan climatique entre les précipitations reçues et l’eau perdue par évapotranspiration potentielle (ETP). Une valeur négative indique un déficit hydrique (sécheresse), tandis qu’une valeur positive traduit un excès d’eau.
+
+Dans notre approche, l’ETP est estimée mensuellement à partir des températures minimales et maximales (données WorldClim) et de la latitude à l’aide de la formule de Hargreaves. Le bilan hydrique mensuel est calculé comme la différence entre les précipitations mensuelles et l’ETP. Cette série temporelle de bilans est ensuite lissée sur une fenêtre mobile de trois mois, puis standardisée pour produire le SPEI. Enfin, les valeurs mensuelles de SPEI sont moyennées par année et par cellule spatiale pour obtenir un indicateur annuel de sécheresse.
+
+```{r}
+if (file.exists("data/spei_by_cell_year_sf.rds")) {
+  grid_makay_spei <- st_read("data/spei_by_cell_year_sf.rds")
+} else if (object_exists("available_data_makay/data/grid_makay_spei.rds",
+           bucket = "projet-betsaka", region = "")) {
+   grid_makay_spei <- s3read_using(
+  FUN = read_rds, object =                       
+    "available_data_makay/data/grid_makay_spei.rds",
+  bucket = "projet-betsaka", opts = list("region" = "")) 
+} else {
+  grid_mada_spei <- s3read_using(
+    FUN = read_rds, object =                       
+      "diffusion/PA-impact-on-deforestation/data/spei_by_cell_year_sf.rds",
+    bucket = "projet-betsaka", opts = list("region" = "")) 
+  
+  grid_mada_spei <- grid_mada_spei %>%
+    st_as_sf()
+  
+  grid_makay_spei <- grid_mada_spei %>%
+    st_filter(makay_union)
+  
+  s3write_using(grid_makay_spei, FUN = write_rds, object = "available_data_makay/data/grid_makay_spei.rds",
+                bucket = "projet-betsaka", opts = list("region" = ""))
+}
+
+
+# long format
+spei_long <- grid_makay_spei |>
+  st_drop_geometry() |>
+  pivot_longer(
+    cols = starts_with("spei_"),
+    names_to = "year",
+    names_prefix = "spei_",
+    values_to = "spei",
+    values_drop_na = TRUE
+  ) |>
+  mutate(year = as.integer(year))
+
+# simple annual mean
+annual_mean <- spei_long |>
+  group_by(year) |>
+  summarise(mean_spei = mean(spei, na.rm = TRUE), .groups = "drop")
+
+ggplot(annual_mean, aes(year, mean_spei)) +
+  geom_hline(yintercept = 0) +
+  geom_line() +
+  geom_point() +
+  labs(x = "Année", y = "SPEI moyen", title = "SPEI annuel – Makay") +
+  theme_minimal()
+```
+
+Le graphique montre une forte variabilité interannuelle du SPEI dans le Makay depuis 1980, avec une alternance marquée d’années humides (SPEI positif) et sèches (SPEI négatif) jusqu’au début des années 2000. À partir de cette période, les valeurs deviennent globalement plus faibles et plus souvent négatives, indiquant une tendance vers des conditions plus sèches, particulièrement marquée après 2010 où plusieurs années consécutives présentent un déficit hydrique. Cette évolution suggère une augmentation de la fréquence ou de la persistance des sécheresses récentes dans la région.
 
 ## Références

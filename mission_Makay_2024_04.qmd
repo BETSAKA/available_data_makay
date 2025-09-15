@@ -1,22 +1,4 @@
----
-title: "Identification d’évènements concrets à élucider lors d’enquêtes terrain"
-author: "Florent Bédécarrats"
-format:
-  html:
-    code-summary: "Voir le code"
-    toc: true
-    output-file: index.html
-    embed-resources: true
-    standalone: true
-    code-fold: true
-execute:
-  warning: false
-  error: false
-editor: visual
-editor_options: 
-  chunk_output_type: console
-bibliography: references.bib
----
+# Analyse spécifique pour la mission d'avril 2024
 
 ## Objet
 
@@ -158,19 +140,34 @@ download_earthdata <- function(url, outdir = "data/firms",
 # Using purrr's map to iterate over each row of the dataframe
 purrr::map(firms_data$downloadsLink, download_earthdata)
 ```
+
 ```{r fires2}
 #| fig-cap: "Feux relevés dans les deux derniers mois autour du parcours de la mission (Source: VIIRS-FIRMS)"
-firms <- list.files("data/firms", full.names = TRUE) %>%
-  map_df(read_csv)
-firms_sf <- firms %>%
-  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
 
-buffer <- coordinates_sf %>%
-  filter(location == "Beronono") %>%
-  st_buffer(100000)
-
-firms_focus <- firms_sf %>%
-  st_intersection(buffer)
+if(!file.exists("data/firms_focus.rds")) {
+  
+  
+  firms_files <- list.files("data/firms", full.names = TRUE)
+  col_types <- read_csv(firms_files[1]) %>% spec()
+  firms <- map_df(
+    firms_files,
+    ~ read_csv(.x, col_types = col_types, show_col_types = FALSE)
+  )
+  
+  firms_sf <- firms %>%
+    st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+  
+  buffer <- coordinates_sf %>%
+    filter(location == "Beronono") %>%
+    st_buffer(100000)
+  
+  firms_focus <- firms_sf %>%
+    st_intersection(buffer)
+  
+  write_rds(firms_focus("data/firms_focus.rds"))
+} else {
+  firms_focus <- read_rds("data/firms_focus.rds")
+}
 
 breaks_frp <- c(min(firms_focus$frp), 
                 median(firms_focus$frp), 
@@ -243,7 +240,6 @@ tm_shape(makay_union) +
 
 La carte montre que l'aire protégée de Makay a été frappée par plusieurs cyclones importants. En particulier, Freddy en 2023 et Bastiraï en 2022, tous deux avec des vents d'environ 57 nœuds (1 nœud = 1,825 km/h). Des cyclones de moindre importance avaient déjà frappé la région les années précédentes : Chedza en 2014 (vents d'environ 42 nœuds), Elita en 2005 (vents d'environ 52 nœuds).
 
-
 ## Deforestation récente
 
 On veut aussi observer des événements de déforestation qui auraient eu lieu récemment. Pour cela, nous utilisons le jeu de données GFC. Ce jeu de données est dérivé des observations de Landsat, permettant de cartographier les étendues forestières et de suivre les changements au fil du temps à l'échelle mondiale avec une résolution de 30 mètres (Hansen et al. 2013). Ce jeu de données distingue entre la couverture forestière en 2000 et les pertes survenues chaque année de 2001 à 2022. C'est un outil pratique qui a été largement adopté pour évaluer l'impact des zones protégées sur la perte forestière. Cependant, le jeu de données du GFC a des limites, dont des erreurs potentielles de classification pour les écosystèmes forestiers atypiques ou les difficultés à distinguer entre forêt naturelle et plantations d'arbres. Ces défis pourraient s'avérer cruciaux pour les biomes secs où le jeu de données sur la couverture forestière mondiale est connu pour sous-estimer la couverture et la perte forestière. Ci-dessous, nous présentons les données les plus récentes disponibles, en distinguant les pertes de couverture forestière survenues avant 2021 et celles survenues en 2021 et 2022 (nous n'avons pas encore de données pour 2023).
@@ -292,16 +288,15 @@ tm_shape(tc_2000) +
   tm_scale_bar()
 ```
 
-On observe sur ces données les éléments suivants: 
-Peu de déforestation relevée en général. PRatiquement pas de points récents, hormis une occurence à 1km au Sud de Tsivoko et plus d'occurrence à une dizaine de kilomètres au Sud Est de Tsivoko.Quelques points plus anciens sont à signaler au Nord de Beronono.
+On observe sur ces données les éléments suivants: Peu de déforestation relevée en général. PRatiquement pas de points récents, hormis une occurence à 1km au Sud de Tsivoko et plus d'occurrence à une dizaine de kilomètres au Sud Est de Tsivoko.Quelques points plus anciens sont à signaler au Nord de Beronono.
 
 ## Perspectives pour l'enquête de terrain
 
-A partir de ces éléments, les chercheuses et chercheurs peuvent envisager plusieurs choses :   
+A partir de ces éléments, les chercheuses et chercheurs peuvent envisager plusieurs choses :
 
-- Observer sur le terrain si des traces de ces événements subsistent ;
-- Aborder ces événements dans le cadre des entretiens : les interlocuteurs en ont-ils un souvenir, peuvent-ils raconter ce qui s'est passé, comment en perçoivent-ils les causes et les conséquences ;
-- Interroger des sources issues des autres bras pour apprécier si elles apportent des éléments concordants ou discordants;
-- Apporter un regard critique sur la pertinence et la fiabilité des sources de données mobilisés.
+-   Observer sur le terrain si des traces de ces événements subsistent ;
+-   Aborder ces événements dans le cadre des entretiens : les interlocuteurs en ont-ils un souvenir, peuvent-ils raconter ce qui s'est passé, comment en perçoivent-ils les causes et les conséquences ;
+-   Interroger des sources issues des autres bras pour apprécier si elles apportent des éléments concordants ou discordants;
+-   Apporter un regard critique sur la pertinence et la fiabilité des sources de données mobilisés.
 
 ## Références
