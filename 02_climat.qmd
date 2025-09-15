@@ -42,26 +42,10 @@ aoi <- makay_union
 # we use parallel computing to reduce processing time
 plan(multisession, workers = 8)
 
-# Reference portfolio (chirps data was loaded at startup)
-aoi <- init_portfolio(aoi, years = 1990:2023,
-                      outdir = "data") 
 
 
 aoi_1 <- s3read_using(FUN = read_rds, object = "diffusion/makay/aoi_1.rds",
                       bucket = "fbedecarrats", opts = list("region" = ""))
-
-if (!exists("aoi_1")) {
-  aoi <- aoi %>%
-  get_resources("chirps")
-  # Compute precipitation
-  aoi_1 <- aoi %>%
-    calc_indicators("precipitation_chirps",
-                    engine = "exactextract",
-                    scales_spi = 3,
-                    spi_prev_years = 8)
-  s3write_using(aoi_1, FUN = write_rds, object = "diffusion/makay/aoi_1.rds",
-                bucket = "fbedecarrats", opts = list("region" = ""))
-}
 
 # We compute 3d average precipitations
 precip_3d <- aoi_1 %>%

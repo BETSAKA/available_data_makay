@@ -23,6 +23,7 @@ library(lubridate) # Pour manipuler des dates
 library(httr)
 library(mapme.biodiversity)
 library(units)
+library(arrow)
 ```
 
 
@@ -91,7 +92,7 @@ breaks_frp_5 <- quantile(firms_focus$frp, probs = seq(0, 1, by = 0.25),
                          na.rm = TRUE)
 tmap_mode("view")
 tm_shape(firms_focus) +
-  tm_dots(col = "frp", size = 0.2, alpha = 0.2,
+  tm_dots(col = "frp", size = 1, alpha = 0.2,
           palette = c("blue", "cyan", "yellow", "orange", "red"),
           border.col = NULL, breaks = breaks_frp_5,
           popup.vars = c("acq_date", "confidence", "frp"),
@@ -116,48 +117,71 @@ This analysis is based on the example produced by Darius Goergen [on the Mapme w
 ```{r map_fires}
 #| fig-cap: "Fires in and around Makay PA (source: MODIS)"
 
-if (!file.exists("nasa_firms.rds")) {
-  
-  buff_size <- 20
-  # Create a 20km buffer around Makay PA
-  makay_ext_buffer <- makay_union %>%
-    st_buffer(dist = set_units(buff_size, km)) %>%
-    st_as_sf() %>%
-    st_difference(makay_union)
-  
-  aoi <- makay_union %>%
-    bind_rows(makay_ext_buffer) %>% 
-    st_cast("POLYGON") %>%
-    mutate(name = c("Makay", "Périphérie 20km"))
-  
-  aoi <- init_portfolio(aoi, years = 1990:2022,
-                        outdir = "data") 
-  
-  aoi <- get_resources(aoi, "nasa_firms", instrument = "MODIS")
-  
-  gpkgs <- list.files(file.path("data", "nasa_firms"),
-                      pattern = ".gpkg", full.names = TRUE)
-  nasa_firms <- map_dfr(gpkgs, function(x) {
-    read_sf(x, wkt_filter = st_as_text(st_as_sfc(st_bbox(aoi))))
-  })
-  nasa_firms <- nasa_firms[unlist(st_contains(aoi, nasa_firms)), ]
-  nasa_firms <- filter(nasa_firms, confidence > 50)
-  nasa_firms$year <- as.factor(year(nasa_firms$acq_date))
-  # Remove year 2000 for visibility
-  nasa_firms <- filter(nasa_firms, year != "2000" & year != "2001")
-  write_rds(nasa_firms, "nasa_firms.rds")
-} else  {
-  nasa_firms <- read_rds("nasa_firms.rds")
-}
+  s3_output <- "diffusion/fire-db2.parquet"
+  makay_union <- st_make_valid(makay_union)
+if (is.na(st_crs(makay_union))) st_crs(makay_union) <- 4326
 
-tmap_mode("plot")
+# Utilise un CRS métrique pour les buffers (Makay est vers ~45E, 20S -> UTM 38S)
+makay_m <- st_transform(makay_union, 32738)    # EPSG:32738 (UTM 38S)
+buf20_m  <- st_buffer(makay_m, 20000)          # 20 km
+# Donut = buffer - polygone
+donut_m  <- st_make_valid(st_difference(buf20_m, st_buffer(makay_m, 0)))
 
-tm_shape(nasa_firms) +
-  tm_dots(col = "darkorange", alpha = 0.1) + 
-  tm_facets(by = "year", nrow = 6, ncol = 4) +
-  tm_shape(makay_union) + 
-  tm_borders(col = "darkblue")
+# Reviens en WGS84 pour les jointures avec (x,y)
+makay_wgs  <- st_transform(makay_m, 4326)
+donut_wgs  <- st_transform(donut_m, 4326)
 
+# 1) Ouvrir le dataset Parquet (Arrow détecte les partitions Hive tout seul)
+ds <- open_dataset(paste0("s3://projet-betsaka/", s3_output), format = "parquet")
+
+# 2) Pré-filtrer côté Arrow par bbox + variable (réduction d’E/S)
+bb  <- st_bbox(st_union(makay_wgs))
+tbl <- ds %>%
+  filter(
+    variable == "fire_occurrences_1year",
+    x >= !!bb["xmin"], x <= !!bb["xmax"],
+    y >= !!bb["ymin"], y <= !!bb["ymax"]
+    # , year >= 2002  # décommente si tu veux mimer l’exclusion 2000–2001
+  ) %>%
+  select(pixelid, x, y, year, value) %>%
+  collect()
+
+# 3) Conversion en points sf puis tag "zone"
+pts <- st_as_sf(tbl, coords = c("x","y"), crs = 4326, remove = FALSE)
+
+in_makay  <- as.logical(st_intersects(pts, makay_wgs, sparse = FALSE)[,1])
+in_donut  <- as.logical(st_intersects(pts, donut_wgs, sparse = FALSE)[,1])
+
+pts$zone <- NA_character_
+pts$zone[in_makay] <- "Makay"
+pts$zone[!in_makay & in_donut] <- "Périphérie 20km"
+
+pts2 <- pts %>% filter(!is.na(zone))
+
+# 4) Agrégats annuels (et total si tu veux)
+res_by_year <- pts2 %>%
+  st_drop_geometry() %>%
+  group_by(zone, year) %>%
+  summarise(
+    n_cells  = n(),
+    sum_fire = sum(value, na.rm = TRUE),
+    mean_fire= mean(value, na.rm = TRUE),
+    .groups  = "drop"
+  ) %>%
+  arrange(zone, year)
+
+res_total <- pts2 %>%
+  st_drop_geometry() %>%
+  group_by(zone) %>%
+  summarise(
+    n_cells  = n(),
+    sum_fire = sum(value, na.rm = TRUE),
+    mean_fire= mean(value, na.rm = TRUE),
+    .groups  = "drop"
+  )
+
+res_by_year
+res_total
 
 ```
 
@@ -165,26 +189,52 @@ Compute indicators on fires.
 
 ```{r stats_fires}
 #| fig-cap: "Fire occurence count in Makay PA (source: MODIS)"
+p_sum <- ggplot(res_by_year, aes(x = year, y = sum_fire, color = zone)) +
+  geom_line() +
+  geom_point(size = 1) +
+  labs(x = "Année", y = "Somme annuelle de feux",
+       color = "Zone",
+       title = "Somme annuelle de feux (Makay vs Périphérie 20 km)") +
+  theme_minimal()
 
-if (!file.exists("fires.rds"))  {
-  aoi <- aoi %>%
-    calc_indicators("active_fire_counts")
-  
-  fires <- aoi %>%
-    unnest(active_fire_counts)
-  write_rds(fires, "fires.rds")
-} else  {
-  fires <- read_rds("fires.rds")
-}
+# 2) Moyenne annuelle par zone (courbe)
+p_mean <- ggplot(res_by_year, aes(x = year, y = mean_fire, color = zone)) +
+  geom_line() +
+  geom_point(size = 1) +
+  labs(x = "Année", y = "Moyenne annuelle de feux par cellule",
+       color = "Zone",
+       title = "Moyenne annuelle de feux par cellule (Makay vs Périphérie 20 km)") +
+  theme_minimal()
 
-fires %>%
-  ggplot(aes(x = year, y = active_fire_counts, group = name, color = name)) + 
-  geom_line()
+# 3) Moyenne sur l'ensemble des années (barres)
+avg_by_zone <- res_by_year %>%
+  group_by(zone) %>%
+  summarise(
+    mean_sum_fire  = mean(sum_fire, na.rm = TRUE),
+    mean_mean_fire = mean(mean_fire, na.rm = TRUE),
+    .groups = "drop"
+  )
 
-# area_makay <- st_area(makay_union) %>%
-#   set_units("km2")
-# area_buffer <- st_area(makay_ext_buffer) %>%
-#   set_units("km2")
+# a) moyenne annuelle de la somme (barres)
+p_avg_sum <- ggplot(avg_by_zone, aes(x = zone, y = mean_sum_fire, fill = zone)) +
+  geom_col() +
+  labs(x = NULL, y = "Somme annuelle moyenne",
+       title = "Somme annuelle moyenne de feux (2000–2024)") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# b) moyenne (sur années) de la moyenne par cellule (barres) — optionnel
+p_avg_mean <- ggplot(avg_by_zone, aes(x = zone, y = mean_mean_fire, fill = zone)) +
+  geom_col() +
+  labs(x = NULL, y = "Moyenne annuelle par cellule",
+       title = "Moyenne annuelle par cellule (2000–2024)") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Afficher
+p_sum
+p_mean
+p_avg_sum
 
 ```
 

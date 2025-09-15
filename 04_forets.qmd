@@ -1,6 +1,11 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
 # Forêts
 
-On veut aussi observer des événements de déforestation qui auraient eu lieu récemment. Pour cela, nous utilisons le jeu de données GFC. Ce jeu de données est dérivé des observations de Landsat, permettant de cartographier les étendues forestières et de suivre les changements au fil du temps à l'échelle mondiale avec une résolution de 30 mètres (Hansen et al. 2013). Ce jeu de données distingue entre la couverture forestière en 2000 et les pertes survenues chaque année de 2001 à 2022. C'est un outil pratique qui a été largement adopté pour évaluer l'impact des zones protégées sur la perte forestière. Cependant, le jeu de données du GFC a des limites, dont des erreurs potentielles de classification pour les écosystèmes forestiers atypiques ou les difficultés à distinguer entre forêt naturelle et plantations d'arbres. Ces défis pourraient s'avérer cruciaux pour les biomes secs où le jeu de données sur la couverture forestière mondiale est connu pour sous-estimer la couverture et la perte forestière. Ci-dessous, nous présentons les données les plus récentes disponibles, en distinguant les pertes de couverture forestière survenues avant 2021 et celles survenues en 2021 et 2022 (nous n'avons pas encore de données pour 2023).
+On veut aussi observer des événements de déforestation qui auraient eu lieu récemment. Pour cela, nous utilisons le jeu de données GFC. Ce jeu de données est dérivé des observations de Landsat, permettant de cartographier les étendues forestières et de suivre les changements au fil du temps à l'échelle mondiale avec une résolution de 30 mètres (Hansen et al. 2013). Ce jeu de données distingue entre la couverture forestière en 2000 et les pertes survenues chaque année de 2001 à 2022. C'est un outil pratique qui a été largement adopté pour évaluer l'impact des zones protégées sur la perte forestière. Cependant, le jeu de données du GFC a des limites, dont des erreurs potentielles de classification pour les écosystèmes forestiers atypiques ou les difficultés à distinguer entre forêt naturelle et plantations d'arbres. Ces défis pourraient s'avérer cruciaux pour les biomes secs où le jeu de données sur la couverture forestière mondiale est connu pour sous-estimer la couverture et la perte forestière. Ci-dessous, nous présentons les données les plus récentes disponibles, en distinguant les pertes de couverture forestière survenues avant 2022 et celles survenues entre 2022 et 2024.
 
 ```{r warning=FALSE, message=FALSE}
 #| fig-cap: "Couvert forestier en 2000 et perte de couvert forestier depuis (source: GFC)"
@@ -73,22 +78,12 @@ buff_size <- 20
     st_cast("POLYGON") %>%
     mutate(name = c("Makay", "Périphérie 20km"))
   
-  aoi <- init_portfolio(aoi, years = 1990:2023,
-                        outdir = "data") 
-
-  aoi <- aoi %>%
-    init_portfolio(years = 2000:2022, outdir = "data") %>%
-    get_resources(c("gfw_treecover", "gfw_lossyear"))
-  url_lossyear <- "https://storage.googleapis.com/earthenginepartners-hansen/GFC-2022-v1.10/Hansen_GFC-2022-v1.10_lossyear_20S_040E.tif"
-  dest_lossyear <- "data/gfw_lossyear/Hansen_GFC-2022-v1.10_lossyear_20S_040E.tif"
-  if(!file.exists(dest_lossyear)) {
-    download.file(url_lossyear, dest_lossyear)
-  }
-  
-  tc_2000 <- rast("data/gfw_treecover/Hansen_GFC-2022-v1.10_treecover2000_20S_040E.tif") %>%
-    crop(buffer)
-  lossyear <- rast("data/gfw_lossyear/Hansen_GFC-2022-v1.10_lossyear_20S_040E.tif") %>%
-    crop(buffer)
+  tc_2000 <- rast("/vsis3/projet-betsaka/diffusion/PA-impact-on-deforestation/mapme/gfw_treecover/Hansen_GFC-2024-v1.12_treecover2000_20S_040E.tif") %>%
+    crop(buffer)  %>%
+    aggregate(fact = 4, fun = max)
+  lossyear <- rast("/vsis3/projet-betsaka/diffusion/PA-impact-on-deforestation/mapme/gfw_lossyear/Hansen_GFC-2024-v1.12_lossyear_20S_040E.tif") %>%
+    crop(buffer) %>%
+    aggregate(fact = 4, fun = max)
   loss <- lossyear
   values(loss) <- ifelse(values(lossyear) > 0, 1, NA)
   loss_recent <- lossyear
@@ -98,10 +93,10 @@ buff_size <- 20
   tm_shape(tc_2000) +
     tm_raster(title = "Forest cover in 2000 (%)", palette = "YlGn", style = "cont") +
     tm_shape(loss) + 
-    tm_raster(title = "Forest cover loss 2001-2020", 
+    tm_raster(title = "Forest cover loss 2001-2021", 
               style = "cat", breaks = c(0, 0.5, 1.5), palette = "red") +
     tm_shape(loss_recent) + 
-    tm_raster(title = "Forest cover loss 2021-2022", 
+    tm_raster(title = "Forest cover loss 2022-2024", 
               style = "cat", breaks = c(0, 0.5, 1.5), palette = "purple") +
     tm_shape(makay_union) + 
     tm_borders(col = "darkblue") + 
