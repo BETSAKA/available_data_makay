@@ -183,6 +183,41 @@ res_total <- pts2 %>%
 res_by_year
 res_total
 
+(res_total$mean_fire[1] - res_total$mean_fire[2])/res_total$mean_fire[2] 
+
+
+comp_moyennes <- res_by_year %>%
+  filter(zone %in% c("Makay", "Périphérie 20km")) %>%
+  select(year, zone, mean_fire) %>%
+  pivot_wider(names_from = zone, values_from = mean_fire) %>%
+  rename(mean_makay = Makay,
+         mean_buffer = `Périphérie 20km`) %>%
+  mutate(
+    diff = mean_makay - mean_buffer,                          # Makay - Buffer
+    ratio = ifelse(mean_buffer > 0, mean_makay / mean_buffer, NA_real_),
+    pct_less_makay_vs_buffer = ifelse(mean_buffer > 0,
+                                      (mean_buffer - mean_makay) / mean_buffer * 100,
+                                      NA_real_)
+  ) %>%
+  arrange(year)
+
+print(comp_moyennes, n = 25)
+
+
+comp_decennies <- comp_moyennes %>%
+  mutate(decade = case_when(
+    year >= 2000 & year <= 2009 ~ "2000s",
+    year >= 2010 & year <= 2029 ~ "post_2000s",
+    TRUE ~ NA_character_
+  )) %>%
+  group_by(decade) %>%
+  summarise(
+    mean_pct_less = mean(pct_less_makay_vs_buffer, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+comp_decennies
+
 ```
 
 Compute indicators on fires.
